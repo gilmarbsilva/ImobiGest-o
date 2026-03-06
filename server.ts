@@ -14,7 +14,19 @@ const __dirname = path.dirname(__filename);
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Lazy-loaded client to avoid crashes if keys are missing at build time
+let _supabaseClient: any = null;
+const supabase = {
+  get auth() {
+    if (!_supabaseClient) _supabaseClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "");
+    return _supabaseClient.auth;
+  },
+  from(table: string) {
+    if (!_supabaseClient) _supabaseClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "");
+    return _supabaseClient.from(table);
+  }
+};
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
@@ -40,12 +52,18 @@ const authMiddleware = async (req: any, res: any, next: any) => {
 
 export async function createApp() {
   const app = express();
-  const PORT = 3000;
+  const currentSupabaseUrl = process.env.SUPABASE_URL || "";
 
-  console.log(`\n[SUPABASE] Conectando a: ${supabaseUrl}`);
-  if (!supabaseKey) {
-    console.error("[SUPABASE] ERRO: SUPABASE_ANON_KEY ou SUPABASE_SERVICE_ROLE_KEY não configurada.");
-  }
+  console.log(`\n[APP] Inicializando aplicação (Node: ${process.version}, Vercel: ${!!process.env.VERCEL})`);
+  console.log(`[SUPABASE] Destino: ${currentSupabaseUrl}`);
+
+  // Debug middleware to see what's reaching Express
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/api')) {
+      console.log(`[REQUEST] ${req.method} ${req.url}`);
+    }
+    next();
+  });
 
   // Seed default admin user if not exists
   const seedAdmin = async () => {
@@ -91,10 +109,27 @@ export async function createApp() {
     }
   }));
 
+  // Very simple health check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", env: process.env.NODE_ENV, vercel: !!process.env.VERCEL, time: new Date().toISOString() });
+  });
+
+  // Helper to get Supabase client, ensuring it's initialized
+  const getSupabase = () => {
+    if (!_supabaseClient) {
+      _supabaseClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "");
+    }
+    return supabase; // Return the existing wrapper object
+  };
+
   app.get("/api/public/db-status", async (req, res) => {
     try {
+      const supabase = getSupabase(); // Use localized client check
       console.log("[DB-STATUS] Verificando conexão com Supabase...");
-      if (!supabaseUrl || !supabaseKey) {
+      const currentUrl = process.env.SUPABASE_URL || "";
+      const currentKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+
+      if (!currentUrl || !currentKey) {
         return res.status(500).json({ connected: false, error: "Servidor sem chaves de API configuradas." });
       }
       const { data, error } = await supabase.from("users").select("id").limit(1);
@@ -112,11 +147,6 @@ export async function createApp() {
       console.error("[DB-STATUS] Erro inesperado:", e.message);
       res.status(500).json({ connected: false, error: e.message });
     }
-  });
-
-  // Very simple health check
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", env: process.env.NODE_ENV, time: new Date().toISOString() });
   });
 
   app.get("/api/me", async (req, res) => {
@@ -742,7 +772,8 @@ export async function createApp() {
 }
 
 // Only start the server if this file is run directly
-const isDirectRun = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('server.ts');
+// Only start the server if this file is run directly AND not on Vercel
+const isDirectRun = (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('server.ts')) && !process.env.VERCEL;
 
 if (isDirectRun) {
   createApp().then(app => {
