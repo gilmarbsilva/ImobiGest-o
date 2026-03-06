@@ -12,6 +12,9 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import multer from "multer";
+const upload = multer({ storage: multer.memoryStorage() });
+
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 
@@ -25,6 +28,10 @@ const supabase = {
   from(table: string) {
     if (!_supabaseClient) _supabaseClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "");
     return _supabaseClient.from(table);
+  },
+  get storage() {
+    if (!_supabaseClient) _supabaseClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "");
+    return _supabaseClient.storage;
   }
 };
 
@@ -38,8 +45,8 @@ const authMiddleware = async (req: any, res: any, next: any) => {
     return next();
   }
 
-  // Allow public and auth API routes
-  if (req.path.startsWith('/api/auth') || req.path === '/api/public/db-status') {
+  // Allow public routes
+  if (req.path.startsWith('/api/auth') || req.path === '/api/public/db-status' || req.path === '/api/me') {
     return next();
   }
 
@@ -114,7 +121,39 @@ export async function createApp() {
     res.json({ status: "ok", env: process.env.NODE_ENV, vercel: !!process.env.VERCEL, time: new Date().toISOString() });
   });
 
-  // Helper to get Supabase client, ensuring it's initialized
+  // File Upload
+  app.post("/api/upload", upload.single("file"), async (req: any, res: any) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
+
+      const file = req.file;
+      const fileExt = path.extname(file.originalname);
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+      const filePath = `documents/${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from("documents")
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          cacheControl: "3600",
+          upsert: false
+        });
+
+      if (error) {
+        return res.status(500).json({ error: `Erro no upload: ${error.message}. Certifique-se que o bucket 'documents' existe no Supabase.` });
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("documents")
+        .getPublicUrl(filePath);
+
+      res.json({ url: publicUrl });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Helper to get Supabase client
   const getSupabase = () => {
     if (!_supabaseClient) {
       _supabaseClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "");
@@ -463,7 +502,14 @@ export async function createApp() {
 
   app.post("/api/inspections", async (req, res) => {
     const { contract_id, type, date, description, photos_link, status } = req.body;
-    const { data, error } = await supabase.from("inspections").insert([{ contract_id, type, date, description, photos_link, status: status || 'pending' }]).select();
+    const { data, error } = await supabase.from("inspections").insert([{
+      contract_id: Number(contract_id),
+      type,
+      date,
+      description,
+      photos_link,
+      status: status || 'pending'
+    }]).select();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ id: data[0].id });
   });
@@ -471,7 +517,14 @@ export async function createApp() {
   app.put("/api/inspections/:id", async (req, res) => {
     const { id } = req.params;
     const { contract_id, type, date, description, photos_link, status } = req.body;
-    const { error } = await supabase.from("inspections").update({ contract_id, type, date, description, photos_link, status }).eq("id", id);
+    const { error } = await supabase.from("inspections").update({
+      contract_id: Number(contract_id),
+      type,
+      date,
+      description,
+      photos_link,
+      status
+    }).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -493,7 +546,16 @@ export async function createApp() {
 
   app.post("/api/maintenances", async (req, res) => {
     const { property_id, description, request_date, estimated_cost, actual_cost, status, paid_by, photos_link } = req.body;
-    const { data, error } = await supabase.from("maintenances").insert([{ property_id, description, request_date, estimated_cost, actual_cost, status: status || 'pending', paid_by, photos_link }]).select();
+    const { data, error } = await supabase.from("maintenances").insert([{
+      property_id: Number(property_id),
+      description,
+      request_date,
+      estimated_cost: Number(estimated_cost) || 0,
+      actual_cost: Number(actual_cost) || 0,
+      status: status || 'pending',
+      paid_by,
+      photos_link
+    }]).select();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ id: data[0].id });
   });
@@ -501,7 +563,16 @@ export async function createApp() {
   app.put("/api/maintenances/:id", async (req, res) => {
     const { id } = req.params;
     const { property_id, description, request_date, estimated_cost, actual_cost, status, paid_by, photos_link } = req.body;
-    const { error } = await supabase.from("maintenances").update({ property_id, description, request_date, estimated_cost, actual_cost, status, paid_by, photos_link }).eq("id", id);
+    const { error } = await supabase.from("maintenances").update({
+      property_id: Number(property_id),
+      description,
+      request_date,
+      estimated_cost: Number(estimated_cost),
+      actual_cost: Number(actual_cost),
+      status,
+      paid_by,
+      photos_link
+    }).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -514,16 +585,22 @@ export async function createApp() {
   });
 
   app.post("/api/owners", async (req, res) => {
-    const { name, email, phone, document } = req.body;
-    const { data, error } = await supabase.from("owners").insert([{ name, email, phone, document }]).select();
+    const { name, email, phone, document, bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type, pix_key } = req.body;
+    const { data, error } = await supabase.from("owners").insert([{
+      name, email, phone, document,
+      bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type, pix_key
+    }]).select();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ id: data[0].id });
   });
 
   app.put("/api/owners/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, email, phone, document } = req.body;
-    const { error } = await supabase.from("owners").update({ name, email, phone, document }).eq("id", id);
+    const { name, email, phone, document, bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type, pix_key } = req.body;
+    const { error } = await supabase.from("owners").update({
+      name, email, phone, document,
+      bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type, pix_key
+    }).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
@@ -571,18 +648,32 @@ export async function createApp() {
 
   app.post("/api/properties", async (req, res) => {
     const { address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, secondary_owners, document_links } = req.body;
-    const { data, error } = await supabase.from("properties").insert([{ address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, document_links }]).select();
+    const { data, error } = await supabase.from("properties").insert([{
+      address,
+      type,
+      size: size ? Number(size) : null,
+      rooms: rooms ? Number(rooms) : 0,
+      bathrooms: bathrooms ? Number(bathrooms) : 0,
+      garage_spaces: garage_spaces ? Number(garage_spaces) : 0,
+      pets_allowed: pets_allowed === '1' || pets_allowed === 1 || pets_allowed === true,
+      usage_type: usage_type || 'individual',
+      owner_id: owner_id ? Number(owner_id) : null,
+      document_links
+    }]).select();
+
     if (error) return res.status(500).json({ error: error.message });
 
     const propertyId = data[0].id;
 
     if (Array.isArray(secondary_owners) && secondary_owners.length > 0) {
-      const poData = secondary_owners.map(so => ({
-        property_id: propertyId,
-        owner_id: so.owner_id,
-        share_percent: so.share_percent || 0
-      }));
-      await supabase.from("property_owners").insert(poData);
+      const poData = secondary_owners
+        .filter(so => so.owner_id && Number(so.owner_id) > 0)
+        .map(so => ({
+          property_id: propertyId,
+          owner_id: Number(so.owner_id),
+          share_percent: Number(so.share_percent) || 0
+        }));
+      if (poData.length > 0) await supabase.from("property_owners").insert(poData);
     }
 
     res.json({ id: propertyId });
@@ -591,21 +682,84 @@ export async function createApp() {
   app.put("/api/properties/:id", async (req, res) => {
     const { id } = req.params;
     const { address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, secondary_owners, document_links } = req.body;
-    const { error } = await supabase.from("properties").update({ address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, document_links }).eq("id", id);
+    const { error } = await supabase.from("properties").update({
+      address,
+      type,
+      size: size ? Number(size) : null,
+      rooms: rooms ? Number(rooms) : 0,
+      bathrooms: bathrooms ? Number(bathrooms) : 0,
+      garage_spaces: garage_spaces ? Number(garage_spaces) : 0,
+      pets_allowed: pets_allowed === '1' || pets_allowed === 1 || pets_allowed === true,
+      usage_type,
+      owner_id: owner_id ? Number(owner_id) : null,
+      document_links
+    }).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
 
     // Update secondary owners
     await supabase.from("property_owners").delete().eq("property_id", id);
     if (Array.isArray(secondary_owners) && secondary_owners.length > 0) {
-      const poData = secondary_owners.map(so => ({
-        property_id: id,
-        owner_id: so.owner_id,
-        share_percent: so.share_percent || 0
-      }));
-      await supabase.from("property_owners").insert(poData);
+      const poData = secondary_owners
+        .filter((so: any) => so.owner_id && Number(so.owner_id) > 0)
+        .map((so: any) => ({
+          property_id: Number(id),
+          owner_id: Number(so.owner_id),
+          share_percent: Number(so.share_percent) || 0
+        }));
+      if (poData.length > 0) await supabase.from("property_owners").insert(poData);
     }
 
     res.json({ success: true });
+  });
+
+  // Bulk Generation of Payments
+  app.post("/api/contracts/generate-payments", async (req, res) => {
+    try {
+      const { month, year } = req.body; // e.g., 3, 2024
+      const { data: contracts, error } = await supabase
+        .from("contracts")
+        .select("*, tenants(name), properties(address)")
+        .lte("start_date", `${year}-${month.toString().padStart(2, '0')}-28`)
+        .gte("end_date", `${year}-${month.toString().padStart(2, '0')}-01`);
+
+      if (error) throw error;
+
+      const created = [];
+      const contractsList = Array.isArray(contracts) ? contracts : [];
+
+      for (const contract of contractsList) {
+        const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+        const endDate = `${year}-${month.toString().padStart(2, '0')}-31`;
+
+        const { data: existing } = await supabase
+          .from("payments")
+          .select("id")
+          .eq("contract_id", contract.id)
+          .gte("due_date", startDate)
+          .lte("due_date", endDate)
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          const dueDay = contract.due_day || 5;
+          const dueDate = `${year}-${month.toString().padStart(2, '0')}-${dueDay.toString().padStart(2, '0')}`;
+
+          const { data: p } = await supabase.from("payments").insert([{
+            contract_id: contract.id,
+            tenant_name: contract.tenants?.name,
+            address: contract.properties?.address,
+            due_date: dueDate,
+            amount_paid: 0,
+            status: 'pending',
+            transfer_status: 'pending'
+          }]).select();
+          if (p) created.push(p[0]);
+        }
+      }
+
+      res.json({ message: `Gerados ${created.length} novos pagamentos para ${month}/${year}.`, count: created.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Contracts
@@ -637,12 +791,32 @@ export async function createApp() {
     } = req.body;
 
     const { data, error } = await supabase.from("contracts").insert([{
-      property_id, tenant_id, start_date, end_date, rent_value, due_day,
-      adjustment_index, admin_tax, charges, extra_charges, transfer_value,
-      guarantee_type, guarantee_value, guarantee_payment_date, guarantee_return_date,
-      water_installation, electricity_installation, gas_installation,
-      broker_id, broker_commission_percent, agency_commission_value,
-      document_links, iptu_status, condo_status, last_adjustment_date, next_adjustment_date
+      property_id: Number(property_id),
+      tenant_id: Number(tenant_id),
+      start_date,
+      end_date,
+      rent_value: Number(rent_value),
+      due_day: Number(due_day),
+      adjustment_index,
+      admin_tax: Number(admin_tax),
+      charges: Number(charges) || 0,
+      extra_charges,
+      transfer_value: Number(transfer_value) || 0,
+      guarantee_type,
+      guarantee_value: Number(guarantee_value) || 0,
+      guarantee_payment_date: guarantee_payment_date || null,
+      guarantee_return_date: guarantee_return_date || null,
+      water_installation,
+      electricity_installation,
+      gas_installation,
+      broker_id: broker_id ? Number(broker_id) : null,
+      broker_commission_percent: Number(broker_commission_percent) || 0,
+      agency_commission_value: Number(agency_commission_value) || 0,
+      document_links,
+      iptu_status: iptu_status || 'pending',
+      condo_status: condo_status || 'pending',
+      last_adjustment_date: last_adjustment_date || null,
+      next_adjustment_date: next_adjustment_date || null
     }]).select();
 
     if (error) return res.status(500).json({ error: error.message });
@@ -661,12 +835,32 @@ export async function createApp() {
     } = req.body;
 
     const { error } = await supabase.from("contracts").update({
-      property_id, tenant_id, start_date, end_date, rent_value, due_day,
-      adjustment_index, admin_tax, charges, extra_charges, transfer_value,
-      guarantee_type, guarantee_value, guarantee_payment_date, guarantee_return_date,
-      water_installation, electricity_installation, gas_installation,
-      broker_id, broker_commission_percent, agency_commission_value,
-      document_links, iptu_status, condo_status, last_adjustment_date, next_adjustment_date
+      property_id: Number(property_id),
+      tenant_id: Number(tenant_id),
+      start_date,
+      end_date,
+      rent_value: Number(rent_value),
+      due_day: Number(due_day),
+      adjustment_index,
+      admin_tax: Number(admin_tax),
+      charges: Number(charges),
+      extra_charges,
+      transfer_value: Number(transfer_value),
+      guarantee_type,
+      guarantee_value: Number(guarantee_value),
+      guarantee_payment_date: guarantee_payment_date || null,
+      guarantee_return_date: guarantee_return_date || null,
+      water_installation,
+      electricity_installation,
+      gas_installation,
+      broker_id: broker_id ? Number(broker_id) : null,
+      broker_commission_percent: Number(broker_commission_percent),
+      agency_commission_value: Number(agency_commission_value),
+      document_links,
+      iptu_status,
+      condo_status,
+      last_adjustment_date: last_adjustment_date || null,
+      next_adjustment_date: next_adjustment_date || null
     }).eq("id", id);
 
     if (error) return res.status(500).json({ error: error.message });

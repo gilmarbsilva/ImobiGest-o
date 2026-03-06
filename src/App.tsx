@@ -38,6 +38,59 @@ import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { Owner, Tenant, Property, Contract, Payment, Broker, Inspection, Maintenance } from './types';
 import Auth from './Auth';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+const FileUpload = ({ onUpload, label }: { onUpload: (url: string) => void, label?: string }) => {
+  const [uploading, setUploading] = useState(false);
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', e.target.files[0]);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        onUpload(data.url);
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (e) {
+      alert('Erro ao conectar com o servidor.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {label && <label className="block text-sm font-medium text-slate-700">{label}</label>}
+      <div className="relative group">
+        <input
+          type="file"
+          onChange={handleChange}
+          disabled={uploading}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+        />
+        <div className={`p-4 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${uploading ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200 group-hover:border-emerald-500 group-hover:bg-emerald-50'
+          }`}>
+          {uploading ? (
+            <div className="flex items-center space-x-2 text-slate-500">
+              <RefreshCw className="animate-spin" size={20} />
+              <span className="text-sm">Enviando...</span>
+            </div>
+          ) : (
+            <>
+              <Upload className="text-slate-400 mb-2 group-hover:text-emerald-500" size={24} />
+              <span className="text-xs text-slate-500 group-hover:text-emerald-600">Escolher Documento/Foto</span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -58,6 +111,8 @@ export default function App() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [extraPayments, setExtraPayments] = useState<{ description: string, value: number }[]>([]);
   const [secondaryOwners, setSecondaryOwners] = useState<{ owner_id: number, share_percent: number }[]>([]);
+  const [uploadedUrl, setUploadedUrl] = useState('');
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
 
   // Form states
   const [showModal, setShowModal] = useState(false);
@@ -134,6 +189,11 @@ export default function App() {
     checkBackup(); // Check on load
     return () => clearInterval(interval);
   }, []);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -512,6 +572,30 @@ export default function App() {
       alert('Erro ao conectar com o servidor.');
     }
   };
+  const handleGeneratePayments = async () => {
+    const today = new Date();
+    const month = today.getMonth() + 1;
+    const year = today.getFullYear();
+
+    if (!confirm(`Deseja gerar as mensalidades de todos os contratos ativos para o mês ${month}/${year}?`)) return;
+
+    try {
+      const res = await fetch('/api/contracts/generate-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, year })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message, 'success');
+        fetchData();
+      } else {
+        showToast(data.error, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
+  };
 
   const handleImportFile = (type: 'owners' | 'tenants' | 'properties', file: File) => {
     const reader = new FileReader();
@@ -559,8 +643,8 @@ export default function App() {
     <button
       onClick={() => setActiveTab(id)}
       className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === id
-          ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
-          : 'text-slate-500 hover:bg-slate-100'
+        ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
+        : 'text-slate-500 hover:bg-slate-100'
         }`}
     >
       <Icon size={20} />
@@ -718,18 +802,18 @@ export default function App() {
                   - Manutenções: Registre solicitações de reparos, orçamentos e controle quem pagará pelo serviço."
                       />
                       <ManualSection
-                        title="4. Contratos, Vistorias e Reajustes"
+                        title="4. Contratos, Vistorias e Uploads"
                         content="O contrato é o centro da operação.
-                  - Vistorias: Realize vistorias de entrada (check-in) e saída (check-out) com links para fotos.
-                  - Garantias: Configure depósitos ou fiadores.
-                  - Reajustes: Acompanhe as datas de último e próximo reajuste anual.
-                  - Taxas: Controle o status de pagamento de IPTU e Condomínio."
+                  - Upload de Arquivos: Agora você pode anexar PDFs de contratos e fotos de vistorias/manutenções diretamente na nuvem (Supabase Storage).
+                  - Vistorias: Controle vistorias de check-in e check-out com armazenamento seguro de imagens.
+                  - Reajustes: Acompanhe as datas de reajuste anual pelo Dashboard."
                       />
                       <ManualSection
-                        title="5. Financeiro & Comissões"
+                        title="5. Financeiro & Automação"
                         content="A aba financeira gerencia cobranças e pagamentos.
-                  - Repasses: O sistema calcula o valor líquido para o proprietário principal e coproprietários.
-                  - Comissões de Corretores: O sistema calcula automaticamente a comissão do corretor vinculado ao contrato em cada pagamento recebido."
+                  - Geração em Massa: Clique em 'Gerar Mensalidades do Mês' para criar automaticamente as cobranças de todos os contratos ativos.
+                  - Repasses: O sistema calcula o valor líquido e permite repasse via Asaas.
+                  - Comissões: Cálculo automático de comissões de corretores por pagamento recebido."
                       />
                       <ManualSection
                         title="6. Importação de Dados"
@@ -798,150 +882,208 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2">
-                      <h3 className="text-xl font-bold mb-4">Pagamentos Recentes</h3>
-                      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                        <table className="w-full text-left">
-                          <thead className="bg-slate-50 border-b border-slate-200">
-                            <tr>
-                              <th className="px-6 py-4 text-sm font-semibold text-slate-500">Inquilino</th>
-                              <th className="px-6 py-4 text-sm font-semibold text-slate-500">Imóvel</th>
-                              <th className="px-6 py-4 text-sm font-semibold text-slate-500">Vencimento</th>
-                              <th className="px-6 py-4 text-sm font-semibold text-slate-500">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {(Array.isArray(payments) ? payments : []).slice(0, 5).map(p => (
-                              <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="px-6 py-4 font-medium">{p.tenant_name}</td>
-                                <td className="px-6 py-4 text-slate-500">{p.address}</td>
-                                <td className="px-6 py-4 text-slate-500">{formatDate(p.due_date)}</td>
-                                <td className="px-6 py-4">
-                                  <div className="flex space-x-2">
-                                    <StatusBadge status={p.status} />
-                                    {p.status === 'pending' && (
-                                      <button
-                                        onClick={() => handleAsaasPayment(p.id)}
-                                        className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
-                                        title="Gerar Boleto/Pix no Asaas"
-                                      >
-                                        <ExternalLink size={14} />
-                                        <span>Asaas</span>
-                                      </button>
-                                    )}
-                                    {p.status === 'paid' && p.transfer_status === 'pending' && (
-                                      <button
-                                        onClick={() => handleAsaasTransfer(p.id)}
-                                        className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
-                                        title="Realizar Repasse via Asaas"
-                                      >
-                                        <Zap size={14} />
-                                        <span>Repassar</span>
-                                      </button>
-                                    )}
-                                    {p.transfer_status === 'done' && (
-                                      <button
-                                        onClick={() => {
-                                          const property = properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id);
-                                          const owner = owners.find(o => o.id === property?.owner_id);
-                                          if (owner?.phone) {
-                                            const message = `Olá ${owner.name}, confirmamos que o repasse de R$ ${p.transfer_amount?.toLocaleString('pt-BR')} referente ao imóvel ${property?.address} foi concluído.`;
-                                            window.open(`https://wa.me/55${owner.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-                                          }
-                                        }}
-                                        className="text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center space-x-1"
-                                      >
-                                        <MessageCircle size={14} />
-                                        <span>Whats</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
+                    <div className="lg:col-span-2 space-y-6">
+                      <section>
+                        <h3 className="text-xl font-bold mb-4 flex items-center space-x-2">
+                          <DollarSign className="text-emerald-500" size={20} />
+                          <span>Previsão de Receita (6 Meses)</span>
+                        </h3>
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 h-80 shadow-sm">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={[
+                              { name: 'Jan', val: 4000 },
+                              { name: 'Fev', val: 3000 },
+                              { name: 'Mar', val: 2000 },
+                              { name: 'Abr', val: 2780 },
+                              { name: 'Mai', val: 1890 },
+                              { name: 'Jun', val: 2390 },
+                            ].map((d, i) => {
+                              const baseVal = (Array.isArray(contracts) ? contracts : []).reduce((acc, curr) => acc + (curr.rent_value || 0), 0);
+                              return { name: d.name, valor: baseVal * (1 + (i * 0.05)) };
+                            })}>
+                              <defs>
+                                <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                              <Tooltip
+                                contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
+                              />
+                              <Area type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </section>
+
+                      <section>
+                        <h3 className="text-xl font-bold mb-4">Pagamentos Recentes</h3>
+                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                          <table className="w-full text-left">
+                            <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Inquilino</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Imóvel</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Vencimento</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Status</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {(Array.isArray(payments) ? payments : []).slice(0, 5).map(p => (
+                                <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="px-6 py-4 font-medium">{p.tenant_name}</td>
+                                  <td className="px-6 py-4 text-slate-500">{p.address}</td>
+                                  <td className="px-6 py-4 text-slate-500">{formatDate(p.due_date)}</td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex space-x-2">
+                                      <StatusBadge status={p.status} />
+                                      {p.status === 'pending' && (
+                                        <button
+                                          onClick={() => handleAsaasPayment(p.id)}
+                                          className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
+                                          title="Gerar Boleto/Pix no Asaas"
+                                        >
+                                          <ExternalLink size={14} />
+                                          <span>Asaas</span>
+                                        </button>
+                                      )}
+                                      {p.status === 'paid' && p.transfer_status === 'pending' && (
+                                        <button
+                                          onClick={() => handleAsaasTransfer(p.id)}
+                                          className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
+                                          title="Realizar Repasse via Asaas"
+                                        >
+                                          <Zap size={14} />
+                                          <span>Repassar</span>
+                                        </button>
+                                      )}
+                                      {p.transfer_status === 'done' && (
+                                        <button
+                                          onClick={() => {
+                                            const property = properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id);
+                                            const owner = owners.find(o => o.id === property?.owner_id);
+                                            if (owner?.phone) {
+                                              const message = `Olá ${owner.name}, confirmamos que o repasse de R$ ${p.transfer_amount?.toLocaleString('pt-BR')} referente ao imóvel ${property?.address} foi concluído.`;
+                                              window.open(`https://wa.me/55${owner.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+                                            }
+                                          }}
+                                          className="text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center space-x-1"
+                                        >
+                                          <MessageCircle size={14} />
+                                          <span>Whats</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
                     </div>
 
-                    <div>
-                      <h3 className="text-xl font-bold mb-4">Alertas e Pendências</h3>
-                      <div className="space-y-4">
-                        {(Array.isArray(inspections) ? inspections : []).filter(i => i.status === 'pending').map(i => (
-                          <div key={`insp-${i.id}`} className="p-4 rounded-2xl border flex items-start space-x-3 text-blue-600 bg-blue-50 border-blue-100">
-                            <div className="mt-0.5"><ShieldCheck size={18} /></div>
-                            <div>
-                              <p className="text-sm font-bold">Vistoria Pendente</p>
-                              <p className="text-xs opacity-80">{i.address} - {i.type}</p>
-                            </div>
+                    <div className="space-y-6">
+                      <section>
+                        <h3 className="text-xl font-bold mb-4">Ocupação</h3>
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="text-slate-500 text-sm">Alugados</span>
+                            <span className="font-bold text-emerald-600">{contracts.length}</span>
                           </div>
-                        ))}
-                        {(Array.isArray(maintenances) ? maintenances : []).filter(m => m.status === 'pending').map(m => (
-                          <div key={`maint-${m.id}`} className="p-4 rounded-2xl border flex items-start space-x-3 text-orange-600 bg-orange-50 border-orange-100">
-                            <div className="mt-0.5"><RefreshCw size={18} /></div>
-                            <div>
-                              <p className="text-sm font-bold">Manutenção Pendente</p>
-                              <p className="text-xs opacity-80">{m.address} - {m.description}</p>
-                            </div>
+                          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${(contracts.length / (properties.length || 1)) * 100}%` }}
+                              className="bg-emerald-500 h-full"
+                            />
                           </div>
-                        ))}
-                        {(Array.isArray(contracts) ? contracts : []).map(c => {
-                          const today = new Date();
-                          const endDate = new Date(c.end_date);
-                          const startDate = new Date(c.start_date);
-                          const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                          <p className="text-[10px] text-slate-400 mt-2">De um total de {properties.length} imóveis</p>
+                        </div>
+                      </section>
 
-                          const alerts = [];
-
-                          // Expiration Alert (within 60 days)
-                          if (diffDays <= 60 && diffDays > 0) {
-                            alerts.push({
-                              type: 'expiration',
-                              title: 'Contrato Vencendo',
-                              desc: `O contrato de ${c.tenant_name} vence em ${diffDays} dias.`,
-                              icon: Clock,
-                              color: 'text-rose-600 bg-rose-50 border-rose-100'
-                            });
-                          } else if (diffDays <= 0) {
-                            alerts.push({
-                              type: 'expiration',
-                              title: 'Contrato Vencido',
-                              desc: `O contrato de ${c.tenant_name} venceu em ${formatDate(c.end_date)}.`,
-                              icon: AlertCircle,
-                              color: 'text-rose-700 bg-rose-100 border-rose-200'
-                            });
-                          }
-
-                          // Annual Adjustment Alert (same month as start_date, but different year)
-                          const isAdjustmentMonth = today.getMonth() === startDate.getMonth() && today.getFullYear() > startDate.getFullYear();
-                          if (isAdjustmentMonth) {
-                            alerts.push({
-                              type: 'adjustment',
-                              title: 'Reajuste Anual',
-                              desc: `Mês de reajuste para ${c.tenant_name} (${c.address}).`,
-                              icon: ArrowRightLeft,
-                              color: 'text-amber-600 bg-amber-50 border-amber-100'
-                            });
-                          }
-
-                          return alerts.map((alert, idx) => (
-                            <div key={`${c.id}-${idx}`} className={`p-4 rounded-2xl border flex items-start space-x-3 ${alert.color}`}>
-                              <div className="mt-0.5">
-                                <alert.icon size={18} />
-                              </div>
+                      <section>
+                        <h3 className="text-xl font-bold mb-4">Alertas e Pendências</h3>
+                        <div className="space-y-4">
+                          {(Array.isArray(inspections) ? inspections : []).filter(i => i.status === 'pending').map(i => (
+                            <div key={`insp-${i.id}`} className="p-4 rounded-2xl border flex items-start space-x-3 text-blue-600 bg-blue-50 border-blue-100">
+                              <div className="mt-0.5"><ShieldCheck size={18} /></div>
                               <div>
-                                <p className="text-sm font-bold">{alert.title}</p>
-                                <p className="text-xs opacity-80">{alert.desc}</p>
+                                <p className="text-sm font-bold">Vistoria Pendente</p>
+                                <p className="text-xs opacity-80">{i.address} - {i.type}</p>
                               </div>
                             </div>
-                          ));
-                        })}
-                        {contracts.length === 0 && (
-                          <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
-                            <p className="text-sm">Nenhum alerta no momento.</p>
-                          </div>
-                        )}
-                      </div>
+                          ))}
+                          {(Array.isArray(maintenances) ? maintenances : []).filter(m => m.status === 'pending').map(m => (
+                            <div key={`maint-${m.id}`} className="p-4 rounded-2xl border flex items-start space-x-3 text-orange-600 bg-orange-50 border-orange-100">
+                              <div className="mt-0.5"><RefreshCw size={18} /></div>
+                              <div>
+                                <p className="text-sm font-bold">Manutenção Pendente</p>
+                                <p className="text-xs opacity-80">{m.address} - {m.description}</p>
+                              </div>
+                            </div>
+                          ))}
+                          {(Array.isArray(contracts) ? contracts : []).map(c => {
+                            const today = new Date();
+                            const endDate = new Date(c.end_date);
+                            const startDate = new Date(c.start_date);
+                            const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                            const alerts = [];
+
+                            // Expiration Alert (within 60 days)
+                            if (diffDays <= 60 && diffDays > 0) {
+                              alerts.push({
+                                type: 'expiration',
+                                title: 'Contrato Vencendo',
+                                desc: `O contrato de ${c.tenant_name} vence em ${diffDays} dias.`,
+                                icon: Clock,
+                                color: 'text-rose-600 bg-rose-50 border-rose-100'
+                              });
+                            } else if (diffDays <= 0) {
+                              alerts.push({
+                                type: 'expiration',
+                                title: 'Contrato Vencido',
+                                desc: `O contrato de ${c.tenant_name} venceu em ${formatDate(c.end_date)}.`,
+                                icon: AlertCircle,
+                                color: 'text-rose-700 bg-rose-100 border-rose-200'
+                              });
+                            }
+
+                            // Annual Adjustment Alert (same month as start_date, but different year)
+                            const isAdjustmentMonth = today.getMonth() === startDate.getMonth() && today.getFullYear() > startDate.getFullYear();
+                            if (isAdjustmentMonth) {
+                              alerts.push({
+                                type: 'adjustment',
+                                title: 'Reajuste Anual',
+                                desc: `Mês de reajuste para ${c.tenant_name} (${c.address}).`,
+                                icon: ArrowRightLeft,
+                                color: 'text-amber-600 bg-amber-50 border-amber-100'
+                              });
+                            }
+
+                            return alerts.map((alert, idx) => (
+                              <div key={`${c.id}-${idx}`} className={`p-4 rounded-2xl border flex items-start space-x-3 ${alert.color}`}>
+                                <div className="mt-0.5">
+                                  <alert.icon size={18} />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold">{alert.title}</p>
+                                  <p className="text-xs opacity-80">{alert.desc}</p>
+                                </div>
+                              </div>
+                            ));
+                          })}
+                          {contracts.length === 0 && (
+                            <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
+                              <p className="text-sm">Nenhum alerta no momento.</p>
+                            </div>
+                          )}
+                        </div>
+                      </section>
                     </div>
                   </div>
                 </div>
@@ -1082,9 +1224,9 @@ export default function App() {
                           <td className="px-6 py-4 text-slate-500">R$ {m.estimated_cost.toLocaleString('pt-BR')}</td>
                           <td className="px-6 py-4">
                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${m.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                                m.status === 'approved' ? 'bg-blue-100 text-blue-700' :
-                                  m.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
-                                    'bg-orange-100 text-orange-700'
+                              m.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                                m.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
+                                  'bg-orange-100 text-orange-700'
                               }`}>
                               {m.status === 'completed' ? 'Concluído' : m.status === 'approved' ? 'Aprovado' : m.status === 'rejected' ? 'Rejeitado' : 'Pendente'}
                             </span>
@@ -1336,6 +1478,15 @@ export default function App() {
                                 >
                                   <Trash2 size={16} />
                                 </button>
+                                {c.document_links && (
+                                  <button
+                                    onClick={() => window.open(c.document_links, '_blank')}
+                                    className="text-blue-500 hover:text-blue-600"
+                                    title="Ver Contrato"
+                                  >
+                                    <FileText size={16} />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1348,6 +1499,16 @@ export default function App() {
 
               {activeTab === 'financial' && (
                 <div className="space-y-6">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-2xl font-bold">Gestão Financeira</h2>
+                    <button
+                      onClick={handleGeneratePayments}
+                      className="flex items-center space-x-2 bg-emerald-500 text-white px-4 py-2 rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 font-bold"
+                    >
+                      <Zap size={18} />
+                      <span>Gerar Mensalidades do Mês</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="bg-white p-6 rounded-2xl border border-slate-200">
                       <p className="text-slate-500 text-sm font-medium mb-1">Total Recebido</p>
@@ -1680,12 +1841,27 @@ export default function App() {
                   </div>
                 </div>
               )}
-
-              {/* Users tab removed */}
             </motion.div>
           </AnimatePresence>
         )}
       </main>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]">
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className={`px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-3 text-white font-bold backdrop-blur-md ${toast.type === 'success' ? 'bg-emerald-500/90' :
+              toast.type === 'error' ? 'bg-rose-500/90' : 'bg-slate-800/90'
+              }`}
+          >
+            {toast.type === 'success' && <ShieldCheck size={20} />}
+            {toast.type === 'error' && <AlertCircle size={20} />}
+            <span>{toast.message}</span>
+          </motion.div>
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (
@@ -1697,7 +1873,7 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold">{editingItem ? 'Editar' : 'Novo'} {modalType === 'owners' ? 'Proprietário' : modalType === 'tenants' ? 'Inquilino' : modalType === 'properties' ? 'Imóvel' : modalType === 'brokers' ? 'Corretor' : 'Contrato'}</h3>
-              <button onClick={() => { setShowModal(false); setEditingItem(null); setExtraCharges([]); setSecondaryOwners([]); }} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setShowModal(false); setEditingItem(null); setExtraCharges([]); setSecondaryOwners([]); setUploadedUrl(''); }} className="text-slate-400 hover:text-slate-600">
                 <Plus className="rotate-45" size={24} />
               </button>
             </div>
@@ -1773,7 +1949,8 @@ export default function App() {
               ) : modalType === 'properties' ? (
                 <>
                   <Input label="Endereço Completo" name="address" defaultValue={editingItem?.address} required />
-                  <Input label="Links de Documentos (Escritura, IPTU, etc)" name="document_links" defaultValue={editingItem?.document_links} placeholder="Links para PDF/Imagens" />
+                  <FileUpload onUpload={(url) => setUploadedUrl(url)} label="Foto do Imóvel / Documento" />
+                  <Input label="Links de Documentos (Opcional)" name="document_links" defaultValue={uploadedUrl || editingItem?.document_links} placeholder="URL ou Upload acima" />
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-sm font-medium text-slate-700">Tipo</label>
@@ -1899,7 +2076,8 @@ export default function App() {
                   <div className="grid grid-cols-3 gap-4">
                     <Input label="Taxa Adm (%)" name="admin_tax" type="number" step="0.1" defaultValue={editingItem?.admin_tax} required />
                     <Input label="Encargos (R$)" name="charges" type="number" step="0.01" defaultValue={editingItem?.charges || 0} />
-                    <Input label="Link do Contrato Digital" name="document_links" defaultValue={editingItem?.document_links} placeholder="Google Drive, etc" />
+                    <FileUpload onUpload={(url) => setUploadedUrl(url)} label="Contrato PDF" />
+                    <Input label="Link do Contrato Digital" name="document_links" defaultValue={uploadedUrl || editingItem?.document_links} placeholder="Google Drive ou Upload acima" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
@@ -2373,8 +2551,8 @@ export default function App() {
                             onClick={() => handleAsaasTransfer(p.id)}
                             disabled={!owner?.bank_code}
                             className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-bold transition-all ${owner?.bank_code
-                                ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-100'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-100'
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                               }`}
                           >
                             <Zap size={16} />
