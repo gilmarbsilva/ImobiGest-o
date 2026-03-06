@@ -72,7 +72,7 @@ export async function createApp() {
       console.error("Erro inesperado ao semear admin:", e);
     }
   };
-  seedAdmin();
+  seedAdmin().catch(e => console.error("Admin seed failed passively:", e.message));
 
   app.use(express.json());
 
@@ -91,11 +91,15 @@ export async function createApp() {
     }
   }));
 
-  // Public diagnostic route
   app.get("/api/public/db-status", async (req, res) => {
     try {
+      console.log("[DB-STATUS] Verificando conexão com Supabase...");
+      if (!supabaseUrl || !supabaseKey) {
+        return res.status(500).json({ connected: false, error: "Servidor sem chaves de API configuradas." });
+      }
       const { data, error } = await supabase.from("users").select("id").limit(1);
       if (error) {
+        console.error("[DB-STATUS] Erro:", error.message);
         return res.json({
           connected: false,
           error: error.message,
@@ -105,8 +109,14 @@ export async function createApp() {
       }
       res.json({ connected: true, hasUsers: data.length > 0 });
     } catch (e: any) {
-      res.json({ connected: false, error: e.message });
+      console.error("[DB-STATUS] Erro inesperado:", e.message);
+      res.status(500).json({ connected: false, error: e.message });
     }
+  });
+
+  // Very simple health check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", env: process.env.NODE_ENV, time: new Date().toISOString() });
   });
 
   app.get("/api/me", async (req, res) => {
@@ -673,10 +683,14 @@ export async function createApp() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+    // On Vercel, the dist folder is not in the same place as the API output usually.
+    // Static files are handled by Vercel Rewrites anyway.
+    if (!process.env.VERCEL) {
+      app.use(express.static(path.join(__dirname, "dist")));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(__dirname, "dist", "index.html"));
+      });
+    }
   }
 
   app.post("/api/import/:type", express.json(), async (req, res) => {
