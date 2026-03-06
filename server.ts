@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
-import { createServer as createViteServer } from "vite";
+// import { createServer as createViteServer } from "vite"; // Removed from top-level for Vercel compatibility
+
 import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -665,6 +666,7 @@ export async function createApp() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -725,9 +727,15 @@ export async function createApp() {
   return app;
 }
 
-createApp().then(app => {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Only start the server if this file is run directly
+const isDirectRun = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('server.ts');
+
+if (isDirectRun) {
+  createApp().then(app => {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
   });
-});
+}
+
