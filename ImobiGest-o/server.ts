@@ -725,12 +725,9 @@ export async function createApp() {
   return app;
 }
 
-// Only start the server if this file is run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  createApp().then(app => {
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
+createApp().then(app => {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
   });
-}
+});
