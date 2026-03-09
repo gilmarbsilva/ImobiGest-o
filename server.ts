@@ -631,7 +631,7 @@ export async function createApp() {
   app.get("/api/properties", async (req, res) => {
     const { data, error } = await supabase
       .from("properties")
-      .select("*, owners(name), property_owners(owner_id, share_percent, owners(*))");
+      .select("*, owners!properties_owner_id_fkey(name), property_owners(owner_id, share_percent, owners(*))");
 
     if (error) return res.status(500).json({ error: error.message });
 
@@ -766,7 +766,7 @@ export async function createApp() {
   app.get("/api/contracts", async (req, res) => {
     const { data, error } = await supabase
       .from("contracts")
-      .select("*, properties(address), tenants(name), owners:properties(owners(name)), brokers(name)");
+      .select("*, properties(address), tenants(name), owners:properties(owners!properties_owner_id_fkey(name)), brokers(name)");
 
     if (error) return res.status(500).json({ error: error.message });
 
