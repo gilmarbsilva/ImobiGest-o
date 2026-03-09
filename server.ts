@@ -958,6 +958,9 @@ export async function createApp() {
       if (error) throw error;
       res.json({ success: true });
     } catch (e: any) {
+      if (e.code === '23503' || (e.message && e.message.includes('violates foreign key constraint'))) {
+        return res.status(400).json({ error: "Não é possível excluir este registro pois ele está vinculado a outros itens no sistema (ex: Propriedades, Contratos, etc). Exclua ou desvincule as dependências primeiro." });
+      }
       res.status(500).json({ error: e.message });
     }
   });
