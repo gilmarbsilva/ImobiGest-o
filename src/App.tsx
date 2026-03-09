@@ -318,11 +318,16 @@ export default function App() {
     if (!confirm('Tem certeza que deseja excluir este registro?')) return;
     try {
       const res = await fetch(`/api/${type}/${id}`, { method: 'DELETE' });
+      if (res.status === 401) {
+        alert("Sua sessão expirou. Por favor, faça login novamente.");
+        setUser(null);
+        return;
+      }
       if (res.ok) {
         fetchData();
       } else {
-        const errorText = await res.text();
-        alert(`Erro ao excluir: ${errorText}`);
+        const errorData = await res.json().catch(() => ({ error: res.statusText }));
+        alert(`Erro ao excluir: ${errorData.error || errorData}`);
       }
     } catch (e: any) {
       alert(`Erro ao excluir: ${e.message}`);
