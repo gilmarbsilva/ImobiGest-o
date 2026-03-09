@@ -209,9 +209,17 @@ export default function App() {
         fetch('/api/maintenances')
       ]);
 
-      const data = await Promise.all(responses.map(async (res) => {
+      let authFailed = false;
+      const data = await Promise.all(responses.map(async (res, index) => {
         if (res.status === 401) {
-          setUser(null);
+          if (!authFailed) {
+            authFailed = true;
+            console.error(`Recebido 401 na requisição, redirecionando para login...`);
+            setTimeout(() => {
+              alert('Sua sessão de login está inválida ou expirou. Por favor, tente logar novamente.');
+            }, 500);
+            setUser(null);
+          }
           return [];
         }
         return res.ok ? await res.json() : [];

@@ -245,7 +245,13 @@ export async function createApp() {
         };
 
         (req.session as any).user = userData;
-        res.json(userData);
+        req.session.save((err: any) => {
+          if (err) {
+            console.error("Session save error:", err);
+            return res.status(500).json({ error: "Erro ao salvar sessão" });
+          }
+          res.json(userData);
+        });
       }
     } catch (e: any) {
       res.status(401).json({ error: e.message });
