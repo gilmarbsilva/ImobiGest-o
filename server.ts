@@ -225,10 +225,16 @@ export async function createApp() {
   });
 
   app.post("/api/auth/login", async (req, res) => {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
     try {
+      // Find the user's email based on the provided username
+      const { data: userRecord, error: userError } = await supabase.from("users").select("email").eq("username", username).maybeSingle();
+      if (userError) throw userError;
+      if (!userRecord?.email) {
+        return res.status(400).json({ error: "Usuário não encontrado" });
+      }
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: userRecord.email,
         password
       });
 
@@ -236,7 +242,7 @@ export async function createApp() {
 
       if (data.user) {
         // Get user profile from our table
-        const { data: profile } = await supabase.from("users").select("*").eq("username", email).maybeSingle();
+        const { data: profile } = await supabase.from("users").select("*").eq("username", username).maybeSingle();
 
         const userData = {
           id: data.user.id,

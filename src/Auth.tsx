@@ -8,6 +8,7 @@ interface AuthProps {
 
 export default function Auth({ onLogin }: AuthProps) {
     const [isLogin, setIsLogin] = useState(true);
+    const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
@@ -21,7 +22,7 @@ export default function Auth({ onLogin }: AuthProps) {
 
         try {
             const endpoint = isLogin ? '/api/auth/login' : '/api/auth/signup';
-            const body = isLogin ? { email, password } : { email, password, name };
+            const body = isLogin ? { username, password } : { email, password, name };
 
             const res = await fetch(endpoint, {
                 method: 'POST',
@@ -96,18 +97,37 @@ export default function Auth({ onLogin }: AuthProps) {
                     </AnimatePresence>
 
                     <div className="space-y-1">
-                        <label className="text-sm font-semibold text-slate-700 ml-1">E-mail</label>
-                        <div className="relative">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input
-                                required
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="seu@email.com"
-                                className="w-full pl-12 pr-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-slate-400"
-                            />
-                        </div>
+                        {isLogin ? (
+                            <>
+                                <label className="text-sm font-semibold text-slate-700 ml-1">Usuário</label>
+                                <div className="relative">
+                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                    <input
+                                        required
+                                        type="text"
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                        placeholder="Seu usuário"
+                                        className="w-full pl-12 pr-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-slate-400"
+                                    />
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <label className="text-sm font-semibold text-slate-700 ml-1">E-mail</label>
+                                <div className="relative">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                    <input
+                                        required
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="seu@email.com"
+                                        className="w-full pl-12 pr-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-slate-400"
+                                    />
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     <div className="space-y-1">
