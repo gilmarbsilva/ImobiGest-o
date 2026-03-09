@@ -209,7 +209,13 @@ export default function App() {
         fetch('/api/maintenances')
       ]);
 
-      const data = await Promise.all(responses.map(res => res.ok ? res.json() : []));
+      const data = await Promise.all(responses.map(async (res) => {
+        if (res.status === 401) {
+          setUser(null);
+          return [];
+        }
+        return res.ok ? await res.json() : [];
+      }));
       const [o, t, p, c, pay, b, insp, maint] = data;
 
       if (Array.isArray(o)) setOwners(o);
