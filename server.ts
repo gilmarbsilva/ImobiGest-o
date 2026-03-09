@@ -227,21 +227,15 @@ export async function createApp() {
   app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     try {
-      // Find the user's email based on the provided username
-      const { data: userRecord, error: userError } = await supabase.from("users").select("email").eq("username", username).maybeSingle();
-      if (userError) throw userError;
-      if (!userRecord?.email) {
-        return res.status(400).json({ error: "Usuário não encontrado" });
-      }
+      // Use the username (which stores the email) for authentication
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: userRecord.email,
+        email: username,
         password
       });
-
       if (error) throw error;
 
       if (data.user) {
-        // Get user profile from our table
+        // Get user profile from our table using the username
         const { data: profile } = await supabase.from("users").select("*").eq("username", username).maybeSingle();
 
         const userData = {
