@@ -640,36 +640,71 @@ export async function createApp() {
   });
 
   app.post("/api/properties", async (req, res) => {
-    const { address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, secondary_owners, document_links } = req.body;
-    const { data, error } = await supabase.from("properties").insert([{
-      address,
-      type,
-      size: size ? Number(size) : null,
-      rooms: rooms ? Number(rooms) : 0,
-      bathrooms: bathrooms ? Number(bathrooms) : 0,
-      garage_spaces: garage_spaces ? Number(garage_spaces) : 0,
-      pets_allowed: pets_allowed === '1' || pets_allowed === 1 || pets_allowed === true,
-      usage_type: usage_type || 'individual',
-      owner_id: owner_id ? Number(owner_id) : null,
-      document_links
-    }]).select();
+    try {
+      const {
+        address,
+        type,
+        size,
+        rooms,
+        bathrooms,
+        garage_spaces,
+        pets_allowed,
+        usage_type,
+        owner_id,
+        secondary_owners = [],
+        document_links = null,
+      } = req.body;
 
-    if (error) return res.status(500).json({ error: error.message });
+      // Validate required fields
+      if (!address) {
+        return res.status(400).json({ error: 'Campo "address" é obrigatório.' });
+      }
 
-    const propertyId = data[0].id;
+      const { data, error } = await supabase.from("properties").insert([
+        {
+          address,
+          type,
+          size: size ? Number(size) : null,
+          rooms: rooms ? Number(rooms) : 0,
+          bathrooms: bathrooms ? Number(bathrooms) : 0,
+          garage_spaces: garage_spaces ? Number(garage_spaces) : 0,
+          pets_allowed: pets_allowed === '1' || pets_allowed === 1 || pets_allowed === true,
+          usage_type: usage_type || 'individual',
+          owner_id: owner_id ? Number(owner_id) : null,
+          document_links,
+        },
+      ]).select();
 
-    if (Array.isArray(secondary_owners) && secondary_owners.length > 0) {
-      const poData = secondary_owners
-        .filter(so => so.owner_id && Number(so.owner_id) > 0)
-        .map(so => ({
-          property_id: propertyId,
-          owner_id: Number(so.owner_id),
-          share_percent: Number(so.share_percent) || 0
-        }));
-      if (poData.length > 0) await supabase.from("property_owners").insert(poData);
+      if (error) {
+        console.error('[API] Erro ao inserir imóvel:', error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      const propertyId = data[0].id;
+
+      // Process secondary owners if provided
+      if (Array.isArray(secondary_owners) && secondary_owners.length > 0) {
+        const poData = secondary_owners
+          .filter((so: any) => so.owner_id && Number(so.owner_id) > 0)
+          .map((so: any) => ({
+            property_id: propertyId,
+            owner_id: Number(so.owner_id),
+            share_percent: Number(so.share_percent) || 0,
+          }));
+        if (poData.length > 0) {
+          const { error: secError } = await supabase.from("property_owners").insert(poData);
+          if (secError) {
+            console.error('[API] Erro ao inserir proprietários secundários:', secError);
+            return res.status(500).json({ error: secError.message });
+          }
+        }
+      }
+
+      return res.json({ id: propertyId });
+    } catch (e: any) {
+      console.error('[API] Exceção inesperada ao salvar imóvel:', e);
+      return res.status(500).json({ error: e.message || 'Erro inesperado ao salvar imóvel.' });
     }
-
-    res.json({ id: propertyId });
   });
 
   app.put("/api/properties/:id", async (req, res) => {
