@@ -1,5 +1,5 @@
 import express from "express";
-import session from "express-session";
+import cookieSession from "cookie-session";
 // import { createServer as createViteServer } from "vite"; // Removed from top-level for Vercel compatibility
 
 import { createClient } from "@supabase/supabase-js";
@@ -101,19 +101,14 @@ export async function createApp() {
 
   app.use(express.json());
 
-  // Session configuration
+  // Session configuration optimized for Vercel Serverless
   app.set('trust proxy', 1); // trust first proxy
-  app.use(session({
-    secret: "imobi-gestao-secret-key",
-    resave: false,
-    saveUninitialized: false,
+  app.use(cookieSession({
     name: 'imobi_session',
-    proxy: true,
-    cookie: {
-      secure: process.env.NODE_ENV === 'production', // Only secure in production
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
+    keys: ['imobi-gestao-secret-key-1', 'imobi-gestao-secret-key-2'],
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    secure: process.env.NODE_ENV === 'production', // Only secure in production
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }));
 
   // Very simple health check
@@ -245,13 +240,7 @@ export async function createApp() {
         };
 
         (req.session as any).user = userData;
-        req.session.save((err: any) => {
-          if (err) {
-            console.error("Session save error:", err);
-            return res.status(500).json({ error: "Erro ao salvar sessão" });
-          }
-          res.json(userData);
-        });
+        res.json(userData);
       }
     } catch (e: any) {
       res.status(401).json({ error: e.message });
@@ -259,10 +248,8 @@ export async function createApp() {
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((err) => {
-      if (err) return res.status(500).json({ error: "Erro ao fazer logout" });
-      res.json({ message: "Logout realizado com sucesso" });
-    });
+    req.session = null;
+    res.json({ message: "Logout realizado com sucesso" });
   });
 
   // Apply Auth Middleware to all subsequent routes
