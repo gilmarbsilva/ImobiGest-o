@@ -357,6 +357,53 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/asaas/check-payment/:paymentId", async (req, res) => {
+    try {
+      const { paymentId } = req.params;
+      const { data: payment, error } = await supabase.from("payments").select("*").eq("id", paymentId).single();
+      if (error || !payment || !payment.asaas_id) return res.status(404).json({ error: "Pagamento não encontrado ou sem ID Asaas" });
+
+      const asaasPayment = await asaasFetch(`/payments/${payment.asaas_id}`);
+      
+      // Update local status if changed
+      const statusMap: any = {
+        'RECEIVED': 'paid',
+        'CONFIRMED': 'paid',
+        'OVERDUE': 'pending',
+        'PENDING': 'pending',
+        'REFUNDED': 'pending'
+      };
+
+      const updates: any = { asaas_status: asaasPayment.status };
+      if (statusMap[asaasPayment.status] === 'paid' && payment.status !== 'paid') {
+        updates.status = 'paid';
+        updates.received_date = asaasPayment.paymentDate || new Date().toISOString().split('T')[0];
+        updates.amount_paid = asaasPayment.value;
+        
+        const { data: contract } = await supabase.from("contracts").select("fees, broker_commission_percent").eq("id", payment.contract_id).single();
+        if (contract) {
+          const comm = (asaasPayment.value * (contract.fees || 0)) / 100;
+          const bComm = (asaasPayment.value * (contract.broker_commission_percent || 0)) / 100;
+          updates.commission_value = comm;
+          updates.broker_commission_value = bComm;
+          // transferAmount = gross - agencyFee - brokerFee - debts (IPTU/Condo)
+          updates.transfer_amount = asaasPayment.value - comm - bComm - (payment.debts_value || 0);
+        }
+      } else if (asaasPayment.status !== payment.asaas_status) {
+        // Just update the status if not paid
+        await supabase.from("payments").update({ asaas_status: asaasPayment.status }).eq("id", paymentId);
+      }
+
+      if (Object.keys(updates).length > 1) {
+        await supabase.from("payments").update(updates).eq("id", paymentId);
+      }
+
+      res.json({ ...asaasPayment, localStatus: updates.status || payment.status });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/asaas/transfer/:paymentId", async (req, res) => {
     try {
       const { paymentId } = req.params;
@@ -412,6 +459,58 @@ export async function createApp() {
     }
   });
 
+  app.post("/api/asaas/transfer-broker/:paymentId", async (req, res) => {
+    try {
+      const { paymentId } = req.params;
+      const { data: payment, error } = await supabase
+        .from("payments")
+        .select(`
+          *,
+          contracts (
+            brokers (
+              name, document, pix_key
+            )
+          )
+        `)
+        .eq("id", paymentId)
+        .eq("status", "paid")
+        .single();
+
+      if (error || !payment) return res.status(404).json({ error: "Pagamento não encontrado ou não está pago." });
+      
+      const broker = payment.contracts?.brokers;
+      if (!broker) return res.status(400).json({ error: "Contrato sem corretor associado." });
+      if (!payment.broker_commission_value || payment.broker_commission_value <= 0) return res.status(400).json({ error: "Valor de comissão do corretor zerado." });
+      if (payment.broker_transfer_status === 'done') return res.status(400).json({ error: "Repasse ao corretor já realizado." });
+
+      const transferBody: any = {
+        value: payment.broker_commission_value,
+        operationType: "PIX",
+        pixAddressKey: broker.pix_key,
+        externalReference: `BROKER_${paymentId}`
+      };
+
+      if (!broker.pix_key) return res.status(400).json({ error: "Corretor sem Chave PIX cadastrada." });
+
+      const asaasTransfer = await asaasFetch("/transfers", {
+        method: "POST",
+        body: JSON.stringify(transferBody),
+      });
+
+      await supabase.from("payments")
+        .update({ 
+          broker_transfer_status: 'done', 
+          broker_transfer_date: new Date().toISOString().split('T')[0],
+          broker_transfer_id: asaasTransfer.id 
+        })
+        .eq("id", paymentId);
+
+      res.json(asaasTransfer);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Webhook Asaas para Conciliação Automática
   app.post("/api/asaas/webhook", express.json(), async (req, res) => {
     const { event, payment } = req.body;
@@ -432,7 +531,9 @@ export async function createApp() {
         const brokerCommissionPercent = localPayment.contracts?.broker_commission_percent || 0;
         const brokerCommissionValue = (amountPaid * brokerCommissionPercent) / 100;
 
-        const transferAmount = amountPaid - commissionValue - brokerCommissionValue;
+        // Debits (Deduções como IPTU, condomínio se pagas pela imobiliária)
+        const debtsValue = localPayment.debts_value || 0;
+        const transferAmount = amountPaid - commissionValue - brokerCommissionValue - debtsValue;
 
         await supabase.from("payments")
           .update({
@@ -446,7 +547,7 @@ export async function createApp() {
           })
           .eq("id", localPayment.id);
 
-        console.log(`Pagamento ${localPayment.id} conciliado via Webhook.`);
+        console.log(`Pagamento ${localPayment.id} conciliado via Webhook. Repasse calculado: ${transferAmount}`);
       }
     } else if (event === "PAYMENT_OVERDUE") {
       await supabase.from("payments").update({ asaas_status: 'OVERDUE' }).eq("asaas_id", payment.id);

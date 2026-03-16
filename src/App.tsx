@@ -113,6 +113,7 @@ export default function App() {
   const [secondaryOwners, setSecondaryOwners] = useState<{ owner_id: number, share_percent: number }[]>([]);
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+  const [debtsValue, setDebtsValue] = useState<number>(0);
 
   // Form states
   const [showModal, setShowModal] = useState(false);
@@ -524,6 +525,7 @@ export default function App() {
       ...data,
       amount_paid: parseFloat(data.amount_paid as string),
       transfer_amount: parseFloat(data.transfer_amount as string),
+      debts_value: parseFloat(data.debts_value as string) || 0,
       extra_payments: JSON.stringify(extraPayments),
       status: 'paid' as const
     };
@@ -589,6 +591,39 @@ export default function App() {
       }
     } catch (e) {
       alert('Erro ao conectar com o servidor.');
+    }
+  };
+
+  const handleAsaasCheck = async (paymentId: number) => {
+    try {
+      showToast('Conferindo status no Asaas...', 'info');
+      const res = await fetch(`/api/asaas/check-payment/${paymentId}`);
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Status Asaas: ${data.status}. Local: ${data.localStatus}`, 'success');
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
+  };
+
+  const handleAsaasBrokerTransfer = async (paymentId: number) => {
+    if (!confirm('Deseja realizar o repasse da comissão para o corretor via PIX Asaas agora?')) return;
+    try {
+      showToast('Processando repasse ao corretor...', 'info');
+      const res = await fetch(`/api/asaas/transfer-broker/${paymentId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Repasse ao corretor realizado com sucesso!', 'success');
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error || 'Verifique a chave PIX do corretor.'}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
     }
   };
   const handleGeneratePayments = async () => {
@@ -1618,6 +1653,16 @@ export default function App() {
                                     <span>Asaas</span>
                                   </button>
                                 )}
+                                {p.asaas_id && (
+                                  <button
+                                    onClick={() => handleAsaasCheck(p.id)}
+                                    className="text-amber-500 hover:text-amber-600 font-medium text-sm flex items-center space-x-1"
+                                    title="Conferir se já foi pago no Asaas"
+                                  >
+                                    <RefreshCw size={14} />
+                                    <span>Conferir</span>
+                                  </button>
+                                )}
                                 {p.status === 'paid' && p.transfer_status === 'pending' && (
                                   <button
                                     onClick={() => handleAsaasTransfer(p.id)}
@@ -1626,6 +1671,16 @@ export default function App() {
                                   >
                                     <Zap size={14} />
                                     <span>Repassar</span>
+                                  </button>
+                                )}
+                                {p.status === 'paid' && p.broker_transfer_status === 'pending' && (
+                                  <button
+                                    onClick={() => handleAsaasBrokerTransfer(p.id)}
+                                    className="text-purple-500 hover:text-purple-600 font-medium text-sm flex items-center space-x-1"
+                                    title="Pagar Comissão Corretor via Asaas"
+                                  >
+                                    <DollarSign size={14} />
+                                    <span>Comissão</span>
                                   </button>
                                 )}
                                 {p.transfer_status === 'done' && (
@@ -2397,30 +2452,39 @@ export default function App() {
                 <Input label="Data Repasse" name="transfer_date" type="date" defaultValue={selectedPayment.transfer_date || new Date().toISOString().split('T')[0]} required />
               </div>
 
-              <div className="relative">
-                <Input label="Valor Repasse" name="transfer_amount" type="number" step="0.01" defaultValue={selectedPayment.transfer_amount || 0} required />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const contract = contracts.find(c => c.id === selectedPayment.contract_id);
-                    if (contract) {
-                      const rent = contract.rent_value;
-                      const adminTax = contract.admin_tax || 0;
-                      const charges = contract.charges || 0;
-                      const extras = (Array.isArray(extraPayments) ? extraPayments : []).reduce((acc, curr) => acc + (curr.value || 0), 0);
-                      // Sugestão: Aluguel - Taxa Adm + Encargos + Extras
-                      const suggested = (rent * (1 - adminTax / 100)) + charges + extras;
-                      const input = document.querySelector('input[name="transfer_amount"]') as HTMLInputElement;
-                      if (input) input.value = suggested.toFixed(2);
-                    }
-                  }}
-                  className="absolute right-2 top-8 text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition-colors font-bold"
-                >
-                  Sugerir Valor
-                </button>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="relative">
+                  <Input label="Valor Repasse" name="transfer_amount" type="number" step="0.01" defaultValue={selectedPayment.transfer_amount || 0} required />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const contract = contracts.find(c => c.id === selectedPayment.contract_id);
+                      if (contract) {
+                        const rent = contract.rent_value;
+                        const adminTax = contract.admin_tax || 0;
+                        const charges = contract.charges || 0;
+                        const extras = (Array.isArray(extraPayments) ? extraPayments : []).reduce((acc, curr) => acc + (curr.value || 0), 0);
+                        const debts = debtsValue;
+                        const suggested = (rent * (1 - adminTax / 100)) + charges + extras - debts;
+                        const input = document.querySelector('input[name="transfer_amount"]') as HTMLInputElement;
+                        if (input) input.value = suggested.toFixed(2);
+                      }
+                    }}
+                    className="absolute right-2 top-8 text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition-colors font-bold"
+                  >
+                    Sugerir
+                  </button>
+                </div>
+                <Input 
+                  label="Débitos (IPTU/Condo)" 
+                  name="debts_value" 
+                  type="number" 
+                  step="0.01" 
+                  value={debtsValue} 
+                  onChange={(e: any) => setDebtsValue(parseFloat(e.target.value) || 0)} 
+                />
               </div>
 
-              {/* Resumo do Cálculo */}
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Resumo do Cálculo</h4>
                 <div className="space-y-1 text-sm">
@@ -2453,9 +2517,13 @@ export default function App() {
                             <span className="font-medium">R$ {extras.toLocaleString('pt-BR')}</span>
                           </div>
                         )}
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Débitos Dedução:</span>
+                          <span className="font-medium text-rose-500">- R$ {debtsValue.toLocaleString('pt-BR')}</span>
+                        </div>
                         <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-emerald-600">
                           <span>Total Sugerido:</span>
-                          <span>R$ {(rent - adminValue + charges + extras).toLocaleString('pt-BR')}</span>
+                          <span>R$ {(rent - adminValue + charges + extras - debtsValue).toLocaleString('pt-BR')}</span>
                         </div>
                       </>
                     );

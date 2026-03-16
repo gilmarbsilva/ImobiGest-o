@@ -80,6 +80,13 @@ export interface Payment {
   address?: string;
   commission_value?: number;
   broker_commission_value?: number;
+  asaas_id?: string;
+  asaas_status?: string;
+  transfer_status?: 'pending' | 'done';
+  broker_transfer_status?: 'pending' | 'done';
+  broker_transfer_date?: string;
+  broker_transfer_id?: string;
+  debts_value?: number;
 }
 
 export interface Broker {
