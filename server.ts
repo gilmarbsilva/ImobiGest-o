@@ -326,7 +326,7 @@ export async function createApp() {
             tenants (name, email, document, phone, asaas_id),
             properties (
               address,
-              owners (id, name, document, bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type)
+              owners!properties_owner_id_fkey (id, name, document, bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type)
             ),
             brokers (id, name, document, pix_key)
           )
@@ -334,12 +334,13 @@ export async function createApp() {
         .eq("id", paymentId)
         .single();
 
-      if (error || !payment) return res.status(404).json({ error: "Pagamento não encontrado" });
+      if (error) console.error("Erro Supabase:", error.message, error.details);
+      if (error || !payment) return res.status(404).json({ error: `Pagamento não encontrado: ${error?.message || ''}` });
 
       const contract = payment.contracts;
       const tenant = contract?.tenants;
       const property = contract?.properties;
-      const owner = property?.owners;
+      const owner = property?.owners; // owners!properties_owner_id_fkey usually returns a single object if it's a direct foreign key.
       const broker = contract?.brokers;
 
       if (!tenant?.asaas_id) return res.status(400).json({ error: "Inquilino não sincronizado com Asaas" });
@@ -533,7 +534,7 @@ export async function createApp() {
           *,
           contracts (
             properties (
-              owners (
+              owners!properties_owner_id_fkey (
                 name, document, bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type, pix_key
               )
             )
@@ -543,7 +544,8 @@ export async function createApp() {
         .eq("status", "paid")
         .single();
 
-      if (error || !payment) return res.status(404).json({ error: "Pagamento não encontrado ou não está pago." });
+      if (error) console.error("Erro Supabase:", error.message, error.details);
+      if (error || !payment) return res.status(404).json({ error: `Pagamento não encontrado ou não está pago: ${error?.message || ''}` });
 
       const owner = payment.contracts?.properties?.owners;
 
