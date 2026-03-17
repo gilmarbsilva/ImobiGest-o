@@ -643,6 +643,27 @@ export default function App() {
       showToast('Erro ao conectar com o servidor.', 'error');
     }
   };
+
+  const handleCheckSubscription = async (contractId: number) => {
+    try {
+      showToast('Verificando status da assinatura...', 'info');
+      const res = await fetch(`/api/asaas/check-subscription/${contractId}`);
+      const data = await res.json();
+      if (res.ok) {
+        if (!data.active) {
+          showToast('Assinatura excluída no Asaas. Sincronizado!', 'success');
+        } else {
+          showToast('Assinatura ainda está ativa no Asaas.', 'success');
+        }
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
+  };
+
   const handleGeneratePayments = async () => {
     const today = new Date();
     const month = today.getMonth() + 1;
@@ -1569,10 +1590,19 @@ export default function App() {
                                   </button>
                                 )}
                                 {(c as any).asaas_subscription_id && (
-                                  <div className="flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
-                                    <CheckCircle2 size={12} />
-                                    <span>ASSINATURA ATIVA</span>
-                                  </div>
+                                  <>
+                                    <div className="flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
+                                      <CheckCircle2 size={12} />
+                                      <span>ASSINATURA ATIVA</span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleCheckSubscription(c.id)}
+                                      className="text-slate-400 hover:text-blue-500 transition-colors ml-2"
+                                      title="Verificar status no Asaas"
+                                    >
+                                      <RefreshCw size={12} />
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </td>

@@ -449,6 +449,28 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/asaas/check-subscription/:contractId", async (req, res) => {
+    try {
+      const { contractId } = req.params;
+      const { data: contract, error } = await supabase.from("contracts").select("asaas_subscription_id").eq("id", contractId).single();
+      
+      if (error || !contract || !contract.asaas_subscription_id) {
+        return res.status(404).json({ error: "Contrato sem assinatura ou não encontrado." });
+      }
+
+      await asaasFetch(`/subscriptions/${contract.asaas_subscription_id}`);
+      res.json({ active: true });
+    } catch (e: any) {
+      if (e.message && e.message.includes("not found")) {
+        // Se retornar 404 do Asaas, significa que foi excluída lá
+        const { contractId } = req.params;
+        await supabase.from("contracts").update({ asaas_subscription_id: null }).eq("id", contractId);
+        return res.json({ active: false, message: "Assinatura estava excluída no Asaas e foi limpa localmente." });
+      }
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/asaas/check-payment/:paymentId", async (req, res) => {
     try {
       const { paymentId } = req.params;
