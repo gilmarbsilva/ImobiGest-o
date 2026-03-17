@@ -626,6 +626,23 @@ export default function App() {
       showToast('Erro ao conectar com o servidor.', 'error');
     }
   };
+
+  const handleAsaasSubscription = async (contractId: number) => {
+    if (!confirm('Deseja criar uma assinatura mensal no Asaas para este contrato? Isso automatizará a geração de cobranças.')) return;
+    try {
+      showToast('Criando assinatura no Asaas...', 'info');
+      const res = await fetch(`/api/asaas/create-subscription/${contractId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Assinatura criada com sucesso!', 'success');
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
+  };
   const handleGeneratePayments = async () => {
     const today = new Date();
     const month = today.getMonth() + 1;
@@ -1540,6 +1557,22 @@ export default function App() {
                                   >
                                     <FileText size={16} />
                                   </button>
+                                )}
+                                {!(c as any).asaas_subscription_id && (
+                                  <button
+                                    onClick={() => handleAsaasSubscription(c.id)}
+                                    className="text-blue-600 hover:text-blue-700 font-bold text-sm flex items-center space-x-1"
+                                    title="Criar Assinatura no Asaas"
+                                  >
+                                    <Zap size={14} />
+                                    <span>Assinatura</span>
+                                  </button>
+                                )}
+                                {(c as any).asaas_subscription_id && (
+                                  <div className="flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
+                                    <CheckCircle2 size={12} />
+                                    <span>ASSINATURA ATIVA</span>
+                                  </div>
                                 )}
                               </div>
                             </td>

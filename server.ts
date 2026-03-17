@@ -320,9 +320,15 @@ export async function createApp() {
         .select(`
           *,
           contracts (
+            fees,
+            broker_commission_percent,
             rent_value,
-            tenants (name, asaas_id),
-            properties (address)
+            tenants (name, email, document, phone, asaas_id),
+            properties (
+              address,
+              owners (id, name, document, bank_code, bank_agency, bank_account, bank_account_digit, bank_account_type)
+            ),
+            brokers (id, name, document, pix_key)
           )
         `)
         .eq("id", paymentId)
@@ -330,21 +336,65 @@ export async function createApp() {
 
       if (error || !payment) return res.status(404).json({ error: "Pagamento não encontrado" });
 
-      const tenant = payment.contracts?.tenants;
-      const property = payment.contracts?.properties;
+      const contract = payment.contracts;
+      const tenant = contract?.tenants;
+      const property = contract?.properties;
+      const owner = property?.owners;
+      const broker = contract?.brokers;
 
       if (!tenant?.asaas_id) return res.status(400).json({ error: "Inquilino não sincronizado com Asaas" });
 
+      const totalValue = payment.amount_paid || contract?.rent_value || 0;
+      const agencyFeePercent = contract?.fees || 0;
+      const brokerFeePercent = contract?.broker_commission_percent || 0;
+      const debtsValue = payment.debts_value || 0;
+
+      const split: any[] = [];
+
+      // Split for Owner (Rent minus Agency Fee and Debts)
+      if (owner && owner.bank_account) {
+        const ownerValue = totalValue - (totalValue * agencyFeePercent / 100) - (totalValue * brokerFeePercent / 100) - debtsValue;
+        if (ownerValue > 0) {
+          split.push({
+            bankAccount: {
+              bank: { code: owner.bank_code },
+              ownerName: owner.name,
+              ownerCpfCnpj: owner.document,
+              agency: owner.bank_agency,
+              account: owner.bank_account,
+              accountDigit: owner.bank_account_digit,
+              bankAccountType: owner.bank_account_type || 'CHECKING_ACCOUNT'
+            },
+            fixedValue: ownerValue
+          });
+        }
+      }
+
+      // Split for Broker (Commission)
+      if (broker && broker.pix_key && brokerFeePercent > 0) {
+        const brokerValue = totalValue * brokerFeePercent / 100;
+        split.push({
+          pixAddressKey: broker.pix_key,
+          fixedValue: brokerValue
+        });
+      }
+
+      const paymentBody: any = {
+        customer: tenant.asaas_id,
+        billingType: "UNDEFINED",
+        value: totalValue,
+        dueDate: payment.due_date,
+        description: `Aluguel - ${property?.address}`,
+        externalReference: payment.id.toString(),
+      };
+
+      if (split.length > 0) {
+        paymentBody.split = split;
+      }
+
       const asaasPayment = await asaasFetch("/payments", {
         method: "POST",
-        body: JSON.stringify({
-          customer: tenant.asaas_id,
-          billingType: "UNDEFINED",
-          value: payment.amount_paid || payment.contracts?.rent_value,
-          dueDate: payment.due_date,
-          description: `Aluguel - ${property?.address}`,
-          externalReference: payment.id.toString(),
-        }),
+        body: JSON.stringify(paymentBody),
       });
 
       await supabase.from("payments")
@@ -352,6 +402,43 @@ export async function createApp() {
         .eq("id", paymentId);
 
       res.json(asaasPayment);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/asaas/create-subscription/:contractId", async (req, res) => {
+    try {
+      const { contractId } = req.params;
+      const { data: contract, error } = await supabase
+        .from("contracts")
+        .select(`
+          *,
+          tenants (name, asaas_id),
+          properties (address)
+        `)
+        .eq("id", contractId)
+        .single();
+
+      if (error || !contract) return res.status(404).json({ error: "Contrato não encontrado" });
+      if (!contract.tenants?.asaas_id) return res.status(400).json({ error: "Inquilino não sincronizado" });
+
+      const subscription = await asaasFetch("/subscriptions", {
+        method: "POST",
+        body: JSON.stringify({
+          customer: contract.tenants.asaas_id,
+          billingType: "UNDEFINED",
+          value: contract.rent_value,
+          nextDueDate: contract.start_date, // Ou lógica baseada no dia de vencimento
+          cycle: "MONTHLY",
+          description: `Assinatura de Aluguel - ${contract.properties?.address}`,
+          externalReference: contract.id.toString(),
+          endDate: contract.end_date
+        }),
+      });
+
+      await supabase.from("contracts").update({ asaas_subscription_id: subscription.id }).eq("id", contractId);
+      res.json(subscription);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -511,49 +598,95 @@ export async function createApp() {
     }
   });
 
-  // Webhook Asaas para Conciliação Automática
+  // Webhook Asaas para Conciliação Automática e Gestão de Ciclo de Vida
   app.post("/api/asaas/webhook", express.json(), async (req, res) => {
-    const { event, payment } = req.body;
-    console.log(`Webhook Asaas: Evento ${event} para cobrança ${payment.id}`);
+    try {
+      const { event, payment } = req.body;
+      console.log(`Webhook Asaas: Evento ${event} para cobrança ${payment.id} (Ref: ${payment.externalReference})`);
 
-    if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
-      const { data: localPayment, error } = await supabase
-        .from("payments")
-        .select("*, contracts(fees, broker_commission_percent)")
-        .eq("asaas_id", payment.id)
-        .single();
+      if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
+        let localPaymentId = payment.externalReference;
+        
+        // Se for um pagamento de assinatura, o externalReference pode não estar presente no pagamento individual
+        // ou pode ser diferente. O Asaas envia o subscriptionId.
+        if (!localPaymentId && payment.subscription) {
+          console.log(`Pagamento de assinatura detectado: ${payment.subscription}`);
+          // Lógica para encontrar ou criar o registro de pagamento local baseado na assinatura
+          const { data: contract } = await supabase.from("contracts").select("id, fees, broker_commission_percent").eq("asaas_subscription_id", payment.subscription).single();
+          if (contract) {
+            // Verificar se já existe um registro de pagamento para este vencimento
+            const { data: existingPayment } = await supabase.from("payments")
+              .select("id")
+              .eq("contract_id", contract.id)
+              .eq("due_date", payment.dueDate)
+              .maybeSingle();
 
-      if (localPayment && !error) {
-        const amountPaid = payment.value;
-        const commissionPercent = localPayment.contracts?.fees || 0;
-        const commissionValue = (amountPaid * commissionPercent) / 100;
+            if (existingPayment) {
+              localPaymentId = existingPayment.id.toString();
+            } else {
+              // Criar novo registro de pagamento se não existir (conciliação retroativa)
+              const { data: newPayment } = await supabase.from("payments").insert([{
+                contract_id: contract.id,
+                due_date: payment.dueDate,
+                status: 'paid',
+                asaas_id: payment.id,
+                asaas_status: 'RECEIVED'
+              }]).select().single();
+              localPaymentId = newPayment.id.toString();
+            }
+          }
+        }
 
-        const brokerCommissionPercent = localPayment.contracts?.broker_commission_percent || 0;
-        const brokerCommissionValue = (amountPaid * brokerCommissionPercent) / 100;
+        if (localPaymentId) {
+          const { data: localPayment, error } = await supabase
+            .from("payments")
+            .select("*, contracts(fees, broker_commission_percent)")
+            .eq("id", localPaymentId)
+            .single();
 
-        // Debits (Deduções como IPTU, condomínio se pagas pela imobiliária)
-        const debtsValue = localPayment.debts_value || 0;
-        const transferAmount = amountPaid - commissionValue - brokerCommissionValue - debtsValue;
+          if (localPayment && !error) {
+            const amountPaid = payment.value;
+            const commissionPercent = localPayment.contracts?.fees || 0;
+            const commissionValue = (amountPaid * commissionPercent) / 100;
 
-        await supabase.from("payments")
-          .update({
-            status: 'paid',
-            received_date: new Date().toISOString().split('T')[0],
-            amount_paid: amountPaid,
-            commission_value: commissionValue,
-            broker_commission_value: brokerCommissionValue,
-            transfer_amount: transferAmount,
-            asaas_status: 'RECEIVED'
-          })
-          .eq("id", localPayment.id);
+            const brokerCommissionPercent = localPayment.contracts?.broker_commission_percent || 0;
+            const brokerCommissionValue = (amountPaid * brokerCommissionPercent) / 100;
 
-        console.log(`Pagamento ${localPayment.id} conciliado via Webhook. Repasse calculado: ${transferAmount}`);
+            const debtsValue = localPayment.debts_value || 0;
+            const transferAmount = amountPaid - commissionValue - brokerCommissionValue - debtsValue;
+
+            await supabase.from("payments")
+              .update({
+                status: 'paid',
+                received_date: payment.paymentDate || new Date().toISOString().split('T')[0],
+                amount_paid: amountPaid,
+                commission_value: commissionValue,
+                broker_commission_value: brokerCommissionValue,
+                transfer_amount: transferAmount,
+                asaas_status: 'RECEIVED',
+                payment_method: payment.billingType
+              })
+              .eq("id", localPayment.id);
+
+            console.log(`Pagamento ${localPayment.id} conciliado via Webhook. Repasse: ${transferAmount}`);
+          }
+        }
+      } else if (event === "PAYMENT_OVERDUE") {
+        await supabase.from("payments").update({ asaas_status: 'OVERDUE' }).eq("asaas_id", payment.id);
+        console.log(`Pagamento ${payment.id} marcado como VENCIDO.`);
+      } else if (event === "PAYMENT_DELETED") {
+        await supabase.from("payments").update({ asaas_status: 'DELETED', status: 'pending' }).eq("asaas_id", payment.id);
+        console.log(`Pagamento ${payment.id} excluído no Asaas.`);
+      } else if (event === "PAYMENT_REFUNDED") {
+        await supabase.from("payments").update({ asaas_status: 'REFUNDED', status: 'pending' }).eq("asaas_id", payment.id);
+        console.log(`Pagamento ${payment.id} estornado.`);
       }
-    } else if (event === "PAYMENT_OVERDUE") {
-      await supabase.from("payments").update({ asaas_status: 'OVERDUE' }).eq("asaas_id", payment.id);
-    }
 
-    res.status(200).send("OK");
+      res.status(200).send("OK");
+    } catch (e: any) {
+      console.error(`Erro no processamento do Webhook Asaas: ${e.message}`);
+      res.status(500).send("Internal Server Error");
+    }
   });
 
   // Brokers
