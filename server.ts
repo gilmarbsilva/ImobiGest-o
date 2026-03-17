@@ -606,11 +606,20 @@ export async function createApp() {
   // Webhook Asaas para Conciliação Automática e Gestão de Ciclo de Vida
   app.post("/api/asaas/webhook", express.json(), async (req, res) => {
     try {
-      const { event, payment } = req.body;
-      console.log(`Webhook Asaas: Evento ${event} para cobrança ${payment.id} (Ref: ${payment.externalReference})`);
+      const { event, payment, subscription } = req.body;
+      console.log(`Webhook Asaas: Evento ${event} recebido.`);
 
-      if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
-        let localPaymentId = payment.externalReference;
+      if (event === "SUBSCRIPTION_DELETED" && subscription) {
+        await supabase.from("contracts").update({ asaas_subscription_id: null }).eq("asaas_subscription_id", subscription.id);
+        console.log(`Assinatura ${subscription.id} excluída no Asaas. Contrato atualizado.`);
+        return res.status(200).send("OK");
+      }
+
+      if (payment) {
+        console.log(`Cobrança associada: ${payment.id} (Ref: ${payment.externalReference})`);
+        
+        if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
+          let localPaymentId = payment.externalReference;
         
         // Se for um pagamento de assinatura, o externalReference pode não estar presente no pagamento individual
         // ou pode ser diferente. O Asaas envia o subscriptionId.
@@ -685,6 +694,7 @@ export async function createApp() {
       } else if (event === "PAYMENT_REFUNDED") {
         await supabase.from("payments").update({ asaas_status: 'REFUNDED', status: 'pending' }).eq("asaas_id", payment.id);
         console.log(`Pagamento ${payment.id} estornado.`);
+      }
       }
 
       res.status(200).send("OK");
