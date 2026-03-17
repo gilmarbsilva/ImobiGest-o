@@ -458,8 +458,14 @@ export async function createApp() {
         return res.status(404).json({ error: "Contrato sem assinatura ou não encontrado." });
       }
 
-      await asaasFetch(`/subscriptions/${contract.asaas_subscription_id}`);
-      res.json({ active: true });
+      const asaasSub = await asaasFetch(`/subscriptions/${contract.asaas_subscription_id}`);
+      
+      if (asaasSub.status === "DELETED" || asaasSub.status === "INACTIVE" || asaasSub.deleted) {
+        await supabase.from("contracts").update({ asaas_subscription_id: null }).eq("id", contractId);
+        return res.json({ active: false, message: "Assinatura estava inativa no Asaas e foi limpa localmente." });
+      }
+
+      res.json({ active: true, status: asaasSub.status });
     } catch (e: any) {
       if (e.message && e.message.includes("not found")) {
         // Se retornar 404 do Asaas, significa que foi excluída lá
