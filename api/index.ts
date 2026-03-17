@@ -10,7 +10,8 @@ export default async function handler(req: any, res: any) {
         // Basic Environment Check (Logged only, not leaked to client)
         const hasUrl = !!process.env.SUPABASE_URL;
         const hasKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY);
-        console.log(`[VERCEL-HANDLER][${requestId}] Env Status: URL=${hasUrl}, Key=${hasKey}`);
+        const hasAsaas = !!process.env.ASAAS_API_KEY;
+        console.log(`[VERCEL-HANDLER][${requestId}] Env Status: URL=${hasUrl}, Key=${hasKey}, Asaas=${hasAsaas}`);
 
         if (!cachedApp) {
             console.log(`[VERCEL-HANDLER][${requestId}] Creating app instance...`);
