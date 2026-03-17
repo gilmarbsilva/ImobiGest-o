@@ -386,6 +386,9 @@ export async function createApp() {
         dueDate: payment.due_date,
         description: `Aluguel - ${property?.address}`,
         externalReference: payment.id.toString(),
+        postalService: false,
+        fine: { value: 2, type: 'PERCENTAGE' },
+        interest: { value: 0.33, type: 'PERCENTAGE' },
       };
 
       if (split.length > 0) {
@@ -433,7 +436,9 @@ export async function createApp() {
           cycle: "MONTHLY",
           description: `Assinatura de Aluguel - ${contract.properties?.address}`,
           externalReference: contract.id.toString(),
-          endDate: contract.end_date
+          endDate: contract.end_date,
+          fine: { value: 2, type: 'PERCENTAGE' },
+          interest: { value: 0.33, type: 'PERCENTAGE' },
         }),
       });
 

@@ -1669,6 +1669,7 @@ export default function App() {
                                 <button
                                   onClick={() => {
                                     setSelectedPayment(p);
+                                    setDebtsValue(p.debts_value || 0);
                                     setExtraPayments(p.extra_payments ? JSON.parse(p.extra_payments) : []);
                                     setShowPaymentModal(true);
                                   }}
