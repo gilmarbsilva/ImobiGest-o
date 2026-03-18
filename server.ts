@@ -46,7 +46,7 @@ const authMiddleware = async (req: any, res: any, next: any) => {
   }
 
   // Allow public routes
-  if (req.path.startsWith('/api/auth') || req.path === '/api/public/db-status' || req.path === '/api/me') {
+  if (req.path.startsWith('/api/auth') || req.path === '/api/public/db-status' || req.path === '/api/me' || req.path === '/api/asaas/webhook') {
     return next();
   }
 
