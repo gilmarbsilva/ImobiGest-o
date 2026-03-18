@@ -490,6 +490,7 @@ export async function createApp() {
       const statusMap: any = {
         'RECEIVED': 'paid',
         'CONFIRMED': 'paid',
+        'RECEIVED_IN_CASH': 'paid',
         'OVERDUE': 'pending',
         'PENDING': 'pending',
         'REFUNDED': 'pending'
