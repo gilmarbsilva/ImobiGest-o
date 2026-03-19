@@ -167,8 +167,9 @@ export async function createApp() {
         return res.status(500).json({ connected: false, error: "Servidor sem chaves de API configuradas." });
       }
       const { data, error } = await supabase.from("users").select("id").limit(1);
+      console.log(`[DEBUG] /api/public/db-status check: found ${data?.length || 0} users`);
       if (error) {
-        console.error("[DB-STATUS] Erro:", error.message);
+        console.error("[DEBUG] /api/public/db-status error:", error.message);
         return res.json({
           connected: false,
           error: error.message,
@@ -853,7 +854,11 @@ export async function createApp() {
   // Owners
   app.get("/api/owners", async (req, res) => {
     const { data, error } = await supabase.from("owners").select("*");
-    if (error) return res.status(500).json({ error: error.message });
+    console.log(`[DEBUG] /api/owners: found ${data?.length || 0} rows`);
+    if (error) {
+      console.error(`[DEBUG] /api/owners error:`, error.message);
+      return res.status(500).json({ error: error.message });
+    }
     res.json(data);
   });
 
@@ -906,7 +911,11 @@ export async function createApp() {
       .from("properties")
       .select("*, owners!properties_owner_id_fkey(name), property_owners(owner_id, share_percent, owners(*))");
 
-    if (error) return res.status(500).json({ error: error.message });
+    console.log(`[DEBUG] /api/properties: found ${data?.length || 0} rows`);
+    if (error) {
+      console.error(`[DEBUG] /api/properties error:`, error.message);
+      return res.status(500).json({ error: error.message });
+    }
 
     const formatted = data.map(p => ({
       ...p,
