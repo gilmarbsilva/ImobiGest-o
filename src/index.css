@@ -113,6 +113,7 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
+    min-height: auto !important;
   }
 
   main {
@@ -133,6 +134,26 @@ body {
     box-shadow: none !important;
   }
 
+  /* Impressão seletiva */
+  .print-financial-only section:not(#report-financial-section) {
+    display: none !important;
+  }
+  
+  .print-contracts-only section:not(#report-contracts-section) {
+    display: none !important;
+  }
+
+  .print-details-only section:not(#report-details-section) {
+    display: none !important;
+  }
+
+  .report-header {
+    display: block !important;
+    border-bottom: 2px solid #10b981 !important;
+    margin-bottom: 2rem !important;
+    color: black !important;
+  }
+
   .bg-slate-50, .bg-white, .bg-emerald-900, .bg-emerald-500 {
     background-color: transparent !important;
     color: black !important;
@@ -141,5 +162,19 @@ body {
   
   .text-emerald-600, .text-blue-600, .text-slate-500, .text-white {
     color: black !important;
+  }
+
+  .rounded-2xl, .rounded-xl {
+    border-radius: 0 !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #eee !important;
+    padding: 8px !important;
   }
 }

@@ -120,6 +120,7 @@ export default function App() {
   const [reportEndDate, setReportEndDate] = useState<string>(
     new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
   );
+  const [printType, setPrintType] = useState<'all' | 'financial' | 'contracts' | 'details'>('all');
 
   // Form states
   const [showModal, setShowModal] = useState(false);
@@ -160,6 +161,14 @@ export default function App() {
     } finally {
       setAuthChecked(true);
     }
+  };
+
+  const handlePrint = (type: typeof printType) => {
+    setPrintType(type);
+    setTimeout(() => {
+      window.print();
+      setPrintType('all');
+    }, 100);
   };
 
   const handleLogout = async () => {
@@ -1821,7 +1830,7 @@ export default function App() {
                         Este Mês
                       </button>
                       <button
-                        onClick={() => window.print()}
+                        onClick={() => handlePrint('all')}
                         className="bg-slate-900 text-white px-6 py-2 rounded-xl hover:bg-slate-800 transition-all shadow-lg flex items-center space-x-2 font-bold"
                       >
                         <Printer size={18} />
@@ -1865,8 +1874,12 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div id="report-content" className="space-y-12">
-                      <div className="text-center border-b border-slate-100 pb-8">
+                    <div id="report-content" className={`space-y-12 ${
+                      printType === 'financial' ? 'print-financial-only' : 
+                      printType === 'contracts' ? 'print-contracts-only' : 
+                      printType === 'details' ? 'print-details-only' : ''
+                    }`}>
+                      <div className="report-header text-center border-b border-slate-100 pb-8">
                         <h2 className="text-3xl font-bold text-emerald-600 mb-2">ImobiGestão - Relatório Gerencial</h2>
                         <div className="flex flex-col items-center space-y-1">
                           <p className="text-slate-700 font-bold">Período: {formatDate(reportStartDate)} a {formatDate(reportEndDate)}</p>
@@ -1875,7 +1888,16 @@ export default function App() {
                       </div>
 
                       <section id="report-financial-section" className="space-y-6">
-                        <h4 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-500 pl-4 py-1">Resumo Financeiro no Período</h4>
+                        <div className="flex justify-between items-center border-l-4 border-emerald-500 pl-4 py-1">
+                          <h4 className="text-lg font-bold text-slate-800">Resumo Financeiro no Período</h4>
+                          <button 
+                            onClick={() => handlePrint('financial')}
+                            className="text-slate-400 hover:text-emerald-600 print:hidden transition-colors"
+                            title="Imprimir Resumo Financeiro"
+                          >
+                            <Printer size={16} />
+                          </button>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
                             <p className="text-xs text-emerald-600 uppercase font-bold mb-2">Total Recebido</p>
@@ -1899,7 +1921,16 @@ export default function App() {
                       </section>
 
                       <section id="report-contracts-section" className="space-y-6">
-                        <h4 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-500 pl-4 py-1">Contratações e Ocupação</h4>
+                        <div className="flex justify-between items-center border-l-4 border-emerald-500 pl-4 py-1">
+                          <h4 className="text-lg font-bold text-slate-800">Contratações e Ocupação</h4>
+                          <button 
+                            onClick={() => handlePrint('contracts')}
+                            className="text-slate-400 hover:text-emerald-600 print:hidden transition-colors"
+                            title="Imprimir Relatório de Contratos"
+                          >
+                            <Printer size={16} />
+                          </button>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="bg-white p-6 rounded-2xl border border-slate-100">
                             <p className="text-sm text-slate-500 mb-2">Taxa de Ocupação</p>
@@ -1947,9 +1978,16 @@ export default function App() {
                         </div>
                       </section>
 
-                      <section className="space-y-6">
-                        <div className="flex justify-between items-center">
-                          <h4 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-500 pl-4 py-1">Detalhamento Financeiro do Período</h4>
+                      <section id="report-details-section" className="space-y-6">
+                        <div className="flex justify-between items-center border-l-4 border-emerald-500 pl-4 py-1">
+                          <h4 className="text-lg font-bold text-slate-800">Detalhamento Financeiro do Período</h4>
+                          <button 
+                            onClick={() => handlePrint('details')}
+                            className="text-slate-400 hover:text-emerald-600 print:hidden transition-colors"
+                            title="Imprimir Detalhamento Financeiro"
+                          >
+                            <Printer size={16} />
+                          </button>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm text-left">
