@@ -114,6 +114,12 @@ export default function App() {
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const [debtsValue, setDebtsValue] = useState<number>(0);
+  const [reportStartDate, setReportStartDate] = useState<string>(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
+  );
+  const [reportEndDate, setReportEndDate] = useState<string>(
+    new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
+  );
 
   // Form states
   const [showModal, setShowModal] = useState(false);
@@ -241,6 +247,11 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
+    if (!p.due_date) return false;
+    return p.due_date >= reportStartDate && p.due_date <= reportEndDate;
+  });
 
   const handleCreateBroker = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -1775,7 +1786,51 @@ export default function App() {
 
               {activeTab === 'reports' && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Filtros de Período */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col md:flex-row md:items-end gap-4 print:hidden">
+                    <div className="flex-1 space-y-2">
+                      <label className="text-sm font-bold text-slate-700 flex items-center space-x-2">
+                        <Calendar size={16} className="text-emerald-500" />
+                        <span>Período do Relatório</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <input
+                          type="date"
+                          value={reportStartDate}
+                          onChange={(e) => setReportStartDate(e.target.value)}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none font-medium"
+                        />
+                        <input
+                          type="date"
+                          value={reportEndDate}
+                          onChange={(e) => setReportEndDate(e.target.value)}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none font-medium"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => {
+                          const start = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+                          const end = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+                          setReportStartDate(start);
+                          setReportEndDate(end);
+                        }}
+                        className="px-4 py-2 text-slate-500 hover:text-emerald-600 font-bold text-sm"
+                      >
+                        Este Mês
+                      </button>
+                      <button
+                        onClick={() => window.print()}
+                        className="bg-slate-900 text-white px-6 py-2 rounded-xl hover:bg-slate-800 transition-all shadow-lg flex items-center space-x-2 font-bold"
+                      >
+                        <Printer size={18} />
+                        <span>Imprimir Tudo</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 print:hidden">
                     <ReportCard
                       title="Repasses Pendentes"
                       desc="Lista de valores recebidos aguardando transferência para proprietários."
@@ -1783,32 +1838,171 @@ export default function App() {
                     />
                     <ReportCard
                       title="Relatório Financeiro"
-                      desc="Resumo de recebimentos, repasses e pendências."
-                      onClick={() => window.print()}
+                      desc="Resumo de recebimentos, repasses e pendências no período selecionado."
+                      onClick={() => {
+                        const el = document.getElementById('report-financial-section');
+                        el?.scrollIntoView({ behavior: 'smooth' });
+                      }}
                     />
                     <ReportCard
                       title="Relatório de Contratos"
                       desc="Lista de contratos ativos, vencimentos e reajustes."
-                      onClick={() => window.print()}
-                    />
-                    <ReportCard
-                      title="Relatório de Imóveis"
-                      desc="Inventário detalhado de todas as propriedades."
-                      onClick={() => window.print()}
-                    />
-                    <ReportCard
-                      title="Relatório de Inquilinos"
-                      desc="Dados de contato e situação contratual dos locatários."
-                      onClick={() => window.print()}
-                    />
-                    <ReportCard
-                      title="Relatório de Proprietários"
-                      desc="Lista de proprietários e seus respectivos imóveis."
-                      onClick={() => window.print()}
+                      onClick={() => {
+                        const el = document.getElementById('report-contracts-section');
+                        el?.scrollIntoView({ behavior: 'smooth' });
+                      }}
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-8 rounded-3xl border border-slate-200 print:border-none print:p-0 shadow-sm overflow-hidden min-h-[500px]">
+                    <div className="flex justify-between items-center mb-8 print:hidden">
+                      <h3 className="text-xl font-bold flex items-center space-x-2">
+                        <BarChart3 size={24} className="text-emerald-500" />
+                        <span>Visualização do Relatório</span>
+                      </h3>
+                      <div className="text-sm text-slate-400 font-medium italic">
+                        Período: {formatDate(reportStartDate)} até {formatDate(reportEndDate)}
+                      </div>
+                    </div>
+
+                    <div id="report-content" className="space-y-12">
+                      <div className="text-center border-b border-slate-100 pb-8">
+                        <h2 className="text-3xl font-bold text-emerald-600 mb-2">ImobiGestão - Relatório Gerencial</h2>
+                        <div className="flex flex-col items-center space-y-1">
+                          <p className="text-slate-700 font-bold">Período: {formatDate(reportStartDate)} a {formatDate(reportEndDate)}</p>
+                          <p className="text-slate-400 text-xs">Gerado em: {new Date().toLocaleString('pt-BR')}</p>
+                        </div>
+                      </div>
+
+                      <section id="report-financial-section" className="space-y-6">
+                        <h4 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-500 pl-4 py-1">Resumo Financeiro no Período</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100">
+                            <p className="text-xs text-emerald-600 uppercase font-bold mb-2">Total Recebido</p>
+                            <p className="text-2xl font-black text-emerald-700">R$ {filteredPayments.filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.amount_paid || 0), 0).toLocaleString('pt-BR')}</p>
+                            <p className="text-[10px] text-emerald-600 mt-1">{filteredPayments.filter(p => p.status === 'paid').length} cobranças baixadas</p>
+                          </div>
+                          <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100">
+                            <p className="text-xs text-blue-600 uppercase font-bold mb-2">Total Repassado</p>
+                            <p className="text-2xl font-black text-blue-700">R$ {filteredPayments.filter(p => p.status === 'paid' && p.transfer_status === 'done').reduce((acc, curr) => acc + (curr.transfer_amount || 0), 0).toLocaleString('pt-BR')}</p>
+                            <p className="text-[10px] text-blue-600 mt-1">{filteredPayments.filter(p => p.status === 'paid' && p.transfer_status === 'done').length} repasses confirmados</p>
+                          </div>
+                          <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
+                            <p className="text-xs text-orange-600 uppercase font-bold mb-2">Pendências Geradas</p>
+                            <p className="text-2xl font-black text-orange-700">R$ {filteredPayments.filter(p => p.status === 'pending').reduce((acc, curr) => {
+                              const contract = contracts.find(c => c.id === curr.contract_id);
+                              return acc + (contract?.rent_value || 0) + (contract?.charges || 0);
+                            }, 0).toLocaleString('pt-BR')}</p>
+                            <p className="text-[10px] text-orange-600 mt-1">{filteredPayments.filter(p => p.status === 'pending').length} cobranças em aberto</p>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section id="report-contracts-section" className="space-y-6">
+                        <h4 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-500 pl-4 py-1">Contratações e Ocupação</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="bg-white p-6 rounded-2xl border border-slate-100">
+                            <p className="text-sm text-slate-500 mb-2">Taxa de Ocupação</p>
+                            <div className="flex items-end space-x-2">
+                              <span className="text-3xl font-black text-slate-800">{Math.round((contracts.length / (properties.length || 1)) * 100)}%</span>
+                              <span className="text-sm text-slate-400 mb-1">({contracts.length} de {properties.length} imóveis)</span>
+                            </div>
+                          </div>
+                          <div className="bg-white p-6 rounded-2xl border border-slate-100">
+                            <p className="text-sm text-slate-500 mb-2">Comissão Agência Projetada</p>
+                            <div className="flex items-end space-x-2">
+                              <span className="text-3xl font-black text-slate-800">R$ {filteredPayments.filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.commission_value || 0), 0).toLocaleString('pt-BR')}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                            <thead>
+                              <tr className="bg-slate-50 border-y border-slate-100">
+                                <th className="px-4 py-3 font-bold text-slate-600">Endereço</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Tipo</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Proprietário</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Ocupação</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {properties.map(p => {
+                                const isOccupied = contracts.some(c => c.property_id === p.id);
+                                return (
+                                  <tr key={p.id} className="hover:bg-slate-50/50">
+                                    <td className="px-4 py-3 font-medium">{p.address}</td>
+                                    <td className="px-4 py-3 text-slate-500">{p.type}</td>
+                                    <td className="px-4 py-3 text-slate-500">{p.owner_name}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isOccupied ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {isOccupied ? 'ALUGADO' : 'DISPONÍVEL'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+
+                      <section className="space-y-6">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-lg font-bold text-slate-800 border-l-4 border-emerald-500 pl-4 py-1">Detalhamento Financeiro do Período</h4>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                            <thead>
+                              <tr className="bg-slate-50 border-y border-slate-100">
+                                <th className="px-4 py-3 font-bold text-slate-600">Inquilino</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Vencimento</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Valor Bruto</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Status</th>
+                                <th className="px-4 py-3 font-bold text-slate-600">Repasse</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {filteredPayments.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400 italic">Nenhum lançamento encontrado para este período.</td>
+                                </tr>
+                              ) : (
+                                filteredPayments.map(p => (
+                                  <tr key={p.id}>
+                                    <td className="px-4 py-3 font-medium">{p.tenant_name}</td>
+                                    <td className="px-4 py-3 text-slate-500">{formatDate(p.due_date)}</td>
+                                    <td className="px-4 py-3 font-bold">R$ {(p.amount_paid || 0).toLocaleString('pt-BR')}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`font-bold text-[10px] ${p.status === 'paid' ? 'text-emerald-600' : 'text-orange-500'}`}>
+                                        {p.status === 'paid' ? 'RECEBIDO' : 'PENDENTE'}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      {p.status === 'paid' ? (
+                                        <div className="flex flex-col">
+                                          <span className="font-bold text-blue-600">R$ {(p.transfer_amount || 0).toLocaleString('pt-BR')}</span>
+                                          <span className="text-[9px] uppercase font-bold text-slate-400">{p.transfer_status === 'done' ? 'Enviado' : 'Aguardando'}</span>
+                                        </div>
+                                      ) : '-'}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+
+                      <div className="pt-8 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-widest no-print">
+                        <span>Fim do Relatório Gerencial</span>
+                        <span>{window.location.hostname}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Segurança e Backup (Abaixo do relatório na tela) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:hidden">
                     <div className="bg-white p-8 rounded-3xl border border-slate-200">
                       <div className="flex items-center space-x-3 mb-6">
                         <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
@@ -1830,7 +2024,7 @@ export default function App() {
                             onClick={() => {
                               const enabled = localStorage.getItem('imobi_auto_backup') === 'true';
                               localStorage.setItem('imobi_auto_backup', (!enabled).toString());
-                              fetchData(); // Trigger re-render
+                              fetchData();
                             }}
                             className={`w-12 h-6 rounded-full transition-colors relative ${localStorage.getItem('imobi_auto_backup') === 'true' ? 'bg-emerald-500' : 'bg-slate-300'}`}
                           >
@@ -1839,33 +2033,20 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                          <button
-                            onClick={triggerBackup}
-                            className="flex items-center justify-center space-x-2 bg-slate-900 text-white p-4 rounded-2xl hover:bg-slate-800 transition-all"
-                          >
+                          <button onClick={triggerBackup} className="flex items-center justify-center space-x-2 bg-slate-900 text-white p-4 rounded-2xl hover:bg-slate-800 transition-all">
                             <Download size={20} />
                             <span className="font-bold">Baixar .DB</span>
                           </button>
-                          <button
-                            onClick={() => {
-                              const data = { owners, tenants, properties, contracts, payments };
-                              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `backup_completo_${new Date().toISOString().split('T')[0]}.json`;
-                              a.click();
-                            }}
-                            className="flex items-center justify-center space-x-2 bg-white border border-slate-200 text-slate-700 p-4 rounded-2xl hover:bg-slate-50 transition-all"
-                          >
+                          <button onClick={() => {
+                            const data = { owners, tenants, properties, contracts, payments };
+                            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a'); a.href = url; a.download = `backup_completo_${new Date().toISOString().split('T')[0]}.json`; a.click();
+                          }} className="flex items-center justify-center space-x-2 bg-white border border-slate-200 text-slate-700 p-4 rounded-2xl hover:bg-slate-50 transition-all">
                             <RefreshCw size={20} />
                             <span className="font-bold">Exportar JSON</span>
                           </button>
                         </div>
-
-                        <p className="text-[10px] text-slate-400 text-center">
-                          Último backup: {localStorage.getItem('imobi_last_backup') ? new Date(localStorage.getItem('imobi_last_backup')!).toLocaleString('pt-BR') : 'Nunca'}
-                        </p>
                       </div>
                     </div>
 
@@ -1873,7 +2054,7 @@ export default function App() {
                       <div className="relative z-10">
                         <h3 className="text-xl font-bold mb-2">Dica de Automação</h3>
                         <p className="text-emerald-100 text-sm leading-relaxed mb-6">
-                          Para um backup 100% automático na sua máquina sem precisar abrir o navegador, você pode configurar um script simples no seu Windows ou Linux que chama nossa API de backup diariamente.
+                          Configure um script diário para backup automático usando nossa API.
                         </p>
                         <div className="bg-black/20 p-4 rounded-xl font-mono text-[10px] text-emerald-200 break-all">
                           curl -o backup.db {window.location.origin}/api/backup/download
@@ -1882,99 +2063,6 @@ export default function App() {
                       <div className="absolute -right-10 -bottom-10 opacity-10">
                         <ShieldCheck size={200} />
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 print:border-none print:p-0">
-                    <div className="flex justify-between items-center mb-8 print:hidden">
-                      <h3 className="text-xl font-bold">Pré-visualização do Relatório</h3>
-                      <button
-                        onClick={() => window.print()}
-                        className="flex items-center space-x-2 bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-800 transition-colors"
-                      >
-                        <Printer size={18} />
-                        <span>Imprimir Relatório</span>
-                      </button>
-                    </div>
-
-                    <div id="report-content" className="space-y-8">
-                      <div className="text-center border-b pb-6">
-                        <h2 className="text-2xl font-bold text-emerald-600">ImobiGestão - Relatório Geral</h2>
-                        <p className="text-slate-500">Gerado em: {new Date().toLocaleDateString('pt-BR')}</p>
-                      </div>
-
-                      <section>
-                        <h4 className="text-lg font-bold mb-4 text-slate-800 border-l-4 border-emerald-500 pl-3">Resumo Financeiro</h4>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div className="p-4 bg-slate-50 rounded-xl">
-                            <p className="text-xs text-slate-500 uppercase font-bold">Total Recebido</p>
-                            <p className="text-xl font-bold text-emerald-600">R$ {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.amount_paid || 0), 0).toLocaleString('pt-BR')}</p>
-                          </div>
-                          <div className="p-4 bg-slate-50 rounded-xl">
-                            <p className="text-xs text-slate-500 uppercase font-bold">Total Repassado</p>
-                            <p className="text-xl font-bold text-blue-600">R$ {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.transfer_amount || 0), 0).toLocaleString('pt-BR')}</p>
-                          </div>
-                          <div className="p-4 bg-slate-50 rounded-xl">
-                            <p className="text-xs text-slate-500 uppercase font-bold">Contratos Ativos</p>
-                            <p className="text-xl font-bold text-slate-800">{contracts.length}</p>
-                          </div>
-                        </div>
-                      </section>
-
-                      <section>
-                        <h4 className="text-lg font-bold mb-4 text-slate-800 border-l-4 border-emerald-500 pl-3">Imóveis e Ocupação</h4>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left border-b">
-                              <th className="pb-2">Endereço</th>
-                              <th className="pb-2">Tipo</th>
-                              <th className="pb-2">Proprietário</th>
-                              <th className="pb-2">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y">
-                            {properties.map(p => {
-                              const isOccupied = contracts.some(c => c.property_id === p.id);
-                              return (
-                                <tr key={p.id}>
-                                  <td className="py-2">{p.address}</td>
-                                  <td className="py-2">{p.type}</td>
-                                  <td className="py-2">{p.owner_name}</td>
-                                  <td className="py-2">
-                                    <span className={isOccupied ? 'text-emerald-600 font-bold' : 'text-slate-400'}>
-                                      {isOccupied ? 'Alugado' : 'Disponível'}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </section>
-
-                      <section>
-                        <h4 className="text-lg font-bold mb-4 text-slate-800 border-l-4 border-emerald-500 pl-3">Próximos Vencimentos</h4>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left border-b">
-                              <th className="pb-2">Inquilino</th>
-                              <th className="pb-2">Vencimento</th>
-                              <th className="pb-2">Valor</th>
-                              <th className="pb-2">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y">
-                            {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'pending').slice(0, 10).map(p => (
-                              <tr key={p.id}>
-                                <td className="py-2">{p.tenant_name}</td>
-                                <td className="py-2">{formatDate(p.due_date)}</td>
-                                <td className="py-2">R$ {p.amount_paid?.toLocaleString('pt-BR') || '1.000,00'}</td>
-                                <td className="py-2 text-orange-500 font-bold">Pendente</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </section>
                     </div>
                   </div>
                 </div>
@@ -2860,6 +2948,7 @@ function ReportCard({ title, desc, onClick }: { title: string, desc: string, onC
   return (
     <button
       onClick={onClick}
+      type="button"
       className="bg-white p-6 rounded-2xl border border-slate-200 text-left hover:border-emerald-500 hover:shadow-lg hover:shadow-emerald-500/5 transition-all group"
     >
       <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 mb-4 transition-colors">
@@ -2882,3 +2971,5 @@ function Input({ label, ...props }: any) {
     </div>
   );
 }
+
+
