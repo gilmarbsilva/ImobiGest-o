@@ -258,8 +258,14 @@ export default function App() {
   };
 
   const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
-    if (!p.due_date) return false;
-    return p.due_date >= reportStartDate && p.due_date <= reportEndDate;
+    // Pegamos apenas a parte da data (YYYY-MM-DD) caso venha com timestamp
+    const dueDate = p.due_date?.substring(0, 10);
+    const receivedDate = p.received_date?.substring(0, 10);
+
+    const isDueInRange = dueDate && dueDate >= reportStartDate && dueDate <= reportEndDate;
+    const isReceivedInRange = receivedDate && receivedDate >= reportStartDate && receivedDate <= reportEndDate;
+
+    return isDueInRange || isReceivedInRange;
   });
 
   const handleCreateBroker = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -518,8 +524,11 @@ export default function App() {
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-';
     try {
-      const [year, month, day] = dateStr.split('-');
-      return `${day}-${month}-${year}`;
+      // Garantir que pegamos apenas a parte da data caso venha com timestamp
+      const pureDate = dateStr.substring(0, 10);
+      const [year, month, day] = pureDate.split('-');
+      if (!day || !month || !year) return dateStr;
+      return `${day}/${month}/${year}`;
     } catch (e) {
       return dateStr;
     }
