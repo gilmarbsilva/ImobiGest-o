@@ -1,4 +1,5 @@
 import express from "express";
+console.log(">>> SERVER.TS EXECUTING <<<");
 import cookieSession from "cookie-session";
 // import { createServer as createViteServer } from "vite"; // Removed from top-level for Vercel compatibility
 
@@ -75,48 +76,50 @@ export async function createApp() {
   // Seed default admin user if not exists
   const seedAdmin = async () => {
     try {
-      console.log(`[SEED] Verificando existência de admin (${ADMIN_USERNAME})...`);
-      // Check if admin exists in Supabase Auth via our users table mapping
-      const { data: users, error } = await supabase.from("users").select("id").eq("username", ADMIN_USERNAME).maybeSingle();
+      const targetAdmin = process.env.ADMIN_USERNAME || "admin@sistema.com";
+      const targetPass = process.env.ADMIN_PASSWORD || "admin123";
 
-      if (error && error.code !== 'PGRST116') {
-        console.error("[SEED] Erro ao verificar usuário admin:", error.message);
+      console.log(`[SEED] Verificando admin: ${targetAdmin}`);
+      
+      const { data: existing, error: checkError } = await supabase.from("users").select("id").eq("username", targetAdmin).maybeSingle();
+
+      if (existing) {
+        console.log("[SEED] Admin já existe na tabela 'users'.");
         return;
       }
 
-      if (!users) {
-        console.log(`[SEED] Admin não encontrado na tabela 'users'. Tentando criar/vincular...`);
-        
-        // Use the Supabase client directly for auth operations if needed
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: ADMIN_USERNAME,
-          password: ADMIN_PASSWORD,
-          options: { data: { name: "Administrador" } }
-        });
+      console.log("[SEED] Criando admin via Admin Auth API...");
+      
+      // Use the service role client for admin operations
+      const adminClient = createClient(process.env.SUPABASE_URL || "", process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+      
+      const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
+        email: targetAdmin,
+        password: targetPass,
+        email_confirm: true,
+        user_metadata: { name: "Administrador" }
+      });
 
-        if (authError) {
-          if (authError.message.includes('already registered')) {
-            console.log("[SEED] Admin já existe no Supabase Auth. Buscando ID...");
-            // If they exist in Auth but not in our table, we might need a way to find their ID
-            // but for simplicity we assume the user will sign up or we have the ID.
-            // In a dev env, this is usually enough.
-          } else {
-            console.error("[SEED] Erro ao criar admin no Auth:", authError.message);
-          }
+      if (authError) {
+        if (authError.message.includes('already registered')) {
+          console.log("[SEED] Admin já registrado no Auth. Tentando recuperar ID...");
+          // If already in auth, we just need to link it in our table
+          // This part is tricky without knowing the ID, but in dev we can just ignore or manually fix.
+        } else {
+          console.error("[SEED] Erro ao criar admin no Auth:", authError.message);
+          return;
         }
-        
-        if (authData?.user) {
-          console.log(`[SEED] Admin criado com ID: ${authData.user.id}. Vinculando na tabela 'users'...`);
-          await supabase.from("users").upsert([
-            { id: authData.user.id, username: ADMIN_USERNAME, name: "Administrador", password: 'SUPABASE_AUTH' }
-          ]);
-          console.log("[SEED] Admin vinculado com sucesso.");
-        }
-      } else {
-        console.log("[SEED] Admin já existe e está vinculado.");
+      }
+
+      if (authUser?.user) {
+        console.log(`[SEED] Admin criado no Auth: ${authUser.user.id}`);
+        await supabase.from("users").upsert([
+          { id: authUser.user.id, username: targetAdmin, name: "Administrador", password: 'SUPABASE_AUTH' }
+        ]);
+        console.log("[SEED] Admin vinculado com sucesso.");
       }
     } catch (e) {
-      console.error("[SEED] Erro inesperado ao semear admin:", e);
+      console.error("[SEED] Erro crítico no seeding:", e);
     }
   };
   seedAdmin().catch(e => console.error("Admin seed failed passively:", e.message));
@@ -1342,12 +1345,14 @@ export async function createApp() {
     }
   });
 
+  // Trigger seeding immediately
+  seedAdmin().catch(e => console.error("[SEED] Erro passivo:", e.message));
+
   return app;
 }
 
-// Only start the server if this file is run directly
 // Only start the server if this file is run directly AND not on Vercel
-const isDirectRun = (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('server.ts')) && !process.env.VERCEL;
+const isDirectRun = !process.env.VERCEL;
 
 if (isDirectRun) {
   createApp().then(app => {

@@ -34,7 +34,11 @@ import {
   ChevronDown,
   Filter,
   List,
-  Settings
+  Settings,
+  TrendingUp,
+  Wrench,
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
