@@ -1746,11 +1746,11 @@ export default function App() {
                                     <span>Asaas</span>
                                   </button>
                                 )}
-                                {p.asaas_id && (
+                                 {(p.asaas_id || (contracts.find(c => c.id === p.contract_id) as any)?.asaas_subscription_id) && (
                                   <button
                                     onClick={() => handleAsaasCheck(p.id)}
                                     className="text-amber-500 hover:text-amber-600 font-medium text-sm flex items-center space-x-1"
-                                    title="Conferir se já foi pago no Asaas"
+                                    title="Conferir status no Asaas"
                                   >
                                     <RefreshCw size={14} />
                                     <span>Conferir</span>

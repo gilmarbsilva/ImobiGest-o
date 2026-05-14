@@ -482,12 +482,32 @@ export async function createApp() {
   app.get("/api/asaas/check-payment/:paymentId", async (req, res) => {
     try {
       const { paymentId } = req.params;
-      const { data: payment, error } = await supabase.from("payments").select("*").eq("id", paymentId).single();
-      if (error || !payment || !payment.asaas_id) return res.status(404).json({ error: "Pagamento não encontrado ou sem ID Asaas" });
-
-      const asaasPayment = await asaasFetch(`/payments/${payment.asaas_id}`);
+      const { data: payment, error } = await supabase
+        .from("payments")
+        .select("*, contracts(fees, broker_commission_percent, asaas_subscription_id)")
+        .eq("id", paymentId)
+        .single();
       
-      // Update local status if changed
+      if (error || !payment) return res.status(404).json({ error: "Pagamento não encontrado" });
+
+      let asaasPaymentId = payment.asaas_id;
+
+      // Se não tiver ID Asaas mas o contrato tiver uma assinatura, tenta encontrar no histórico do Asaas
+      if (!asaasPaymentId && (payment as any).contracts?.asaas_subscription_id) {
+        const subId = (payment as any).contracts.asaas_subscription_id;
+        console.log(`[CHECK-PAYMENT] Buscando cobrança na assinatura ${subId} para o vencimento ${payment.due_date}`);
+        const subPayments = await asaasFetch(`/subscriptions/${subId}/payments`);
+        const match = (subPayments.data || []).find((p: any) => p.dueDate === payment.due_date);
+        if (match) {
+          asaasPaymentId = match.id;
+          console.log(`[CHECK-PAYMENT] Cobrança encontrada no Asaas: ${match.id}`);
+        }
+      }
+
+      if (!asaasPaymentId) return res.status(404).json({ error: "Este pagamento ainda não foi vinculado ou gerado no Asaas." });
+
+      const asaasPayment = await asaasFetch(`/payments/${asaasPaymentId}`);
+      
       const statusMap: any = {
         'RECEIVED': 'paid',
         'CONFIRMED': 'paid',
@@ -497,32 +517,31 @@ export async function createApp() {
         'REFUNDED': 'pending'
       };
 
-      const updates: any = { asaas_status: asaasPayment.status };
+      const updates: any = { 
+        asaas_id: asaasPaymentId,
+        asaas_status: asaasPayment.status 
+      };
+
       if (statusMap[asaasPayment.status] === 'paid' && payment.status !== 'paid') {
         updates.status = 'paid';
         updates.received_date = asaasPayment.paymentDate || new Date().toISOString().split('T')[0];
         updates.amount_paid = asaasPayment.value;
+        updates.payment_method = asaasPayment.billingType;
         
-        const { data: contract } = await supabase.from("contracts").select("fees, broker_commission_percent").eq("id", payment.contract_id).single();
+        const contract = (payment as any).contracts;
         if (contract) {
           const comm = (asaasPayment.value * (contract.fees || 0)) / 100;
           const bComm = (asaasPayment.value * (contract.broker_commission_percent || 0)) / 100;
           updates.commission_value = comm;
           updates.broker_commission_value = bComm;
-          // transferAmount = gross - agencyFee - brokerFee - debts (IPTU/Condo)
           updates.transfer_amount = asaasPayment.value - comm - bComm - (payment.debts_value || 0);
         }
-      } else if (asaasPayment.status !== payment.asaas_status) {
-        // Just update the status if not paid
-        await supabase.from("payments").update({ asaas_status: asaasPayment.status }).eq("id", paymentId);
       }
 
-      if (Object.keys(updates).length > 1) {
-        await supabase.from("payments").update(updates).eq("id", paymentId);
-      }
-
+      await supabase.from("payments").update(updates).eq("id", paymentId);
       res.json({ ...asaasPayment, localStatus: updates.status || payment.status });
     } catch (e: any) {
+      console.error("[CHECK-PAYMENT] Erro:", e.message);
       res.status(500).json({ error: e.message });
     }
   });
@@ -651,13 +670,12 @@ export async function createApp() {
         console.log(`Cobrança associada: ${payment.id} (Ref: ${payment.externalReference})`);
         
         if (event === "PAYMENT_CREATED" || event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
-          let localPaymentId = payment.externalReference;
-        
-          // Se for um pagamento de assinatura, o externalReference pode não estar presente no pagamento individual
-          // ou pode ser diferente. O Asaas envia o subscriptionId.
-          if (!localPaymentId && payment.subscription) {
+          let localPaymentId = null;
+          
+          // Se for um pagamento de assinatura, o externalReference no Asaas costuma ser o ID do contrato.
+          // Priorizamos a lógica de assinatura se o campo estiver presente.
+          if (payment.subscription) {
             console.log(`Pagamento de assinatura detectado: ${payment.subscription}`);
-            // Lógica para encontrar ou criar o registro de pagamento local baseado na assinatura
             const { data: contract } = await supabase.from("contracts").select("id, fees, broker_commission_percent").eq("asaas_subscription_id", payment.subscription).single();
             if (contract) {
               // Verificar se já existe um registro de pagamento para este vencimento ou com este asaas_id
@@ -680,6 +698,9 @@ export async function createApp() {
                 if (newPayment) localPaymentId = newPayment.id.toString();
               }
             }
+          } else {
+            // Se não for assinatura, o externalReference deve ser o ID do pagamento local
+            localPaymentId = payment.externalReference;
           }
 
           if (localPaymentId) {
