@@ -31,7 +31,10 @@ import {
   FileSpreadsheet,
   HelpCircle,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Filter,
+  List,
+  Settings
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -39,6 +42,68 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Owner, Tenant, Property, Contract, Payment, Broker, Inspection, Maintenance } from './types';
 import Auth from './Auth';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+const FinancialCard = ({ title, value, liquidValue, clients, charges, color, progress }: any) => {
+  const colors: any = {
+    emerald: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+    blue: 'text-blue-600 bg-blue-50 border-blue-100',
+    amber: 'text-amber-600 bg-amber-50 border-amber-100',
+    red: 'text-red-600 bg-red-50 border-red-100'
+  };
+
+  const progressColors: any = {
+    emerald: 'bg-emerald-500',
+    blue: 'bg-blue-400',
+    amber: 'bg-amber-400',
+    red: 'bg-red-400'
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+      <div className="flex justify-between items-start mb-4">
+        <h3 className="text-slate-500 text-sm font-bold">{title}</h3>
+        <div className="p-1.5 rounded-full bg-slate-50 text-slate-300 hover:text-blue-500 cursor-help">
+          <HelpCircle size={14} />
+        </div>
+      </div>
+      
+      <div className="mb-4">
+        <div className={`text-3xl font-black ${colors[color].split(' ')[0]}`}>
+          R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+        </div>
+        {liquidValue > 0 && (
+          <div className="text-xs text-slate-400 font-bold mt-1">
+            R$ {liquidValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} líquido
+          </div>
+        )}
+      </div>
+
+      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-6">
+        <div 
+          className={`h-full ${progressColors[color]} transition-all duration-1000 ease-out`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between text-slate-600 hover:text-blue-600 cursor-pointer group/row">
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-slate-400 group-hover/row:text-blue-500" />
+            <span className="text-sm font-bold">{clients} {clients === 1 ? 'cliente' : 'clientes'}</span>
+          </div>
+          <ChevronRight size={16} className="text-slate-300 group-hover/row:text-blue-500" />
+        </div>
+        <div className="flex items-center justify-between text-slate-600 hover:text-blue-600 cursor-pointer group/row">
+          <div className="flex items-center gap-2">
+            <CreditCard size={16} className="text-slate-400 group-hover/row:text-blue-500" />
+            <span className="text-sm font-bold">{charges} {charges === 1 ? 'cobrança' : 'cobranças'}</span>
+          </div>
+          <ChevronRight size={16} className="text-slate-300 group-hover/row:text-blue-500" />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const FileUpload = ({ onUpload, label }: { onUpload: (url: string) => void, label?: string }) => {
   const [uploading, setUploading] = useState(false);
@@ -134,6 +199,20 @@ export default function App() {
     checkAuth();
     checkDbStatus();
   }, []);
+
+  // Background Sync para faturas do Asaas
+  useEffect(() => {
+    if (activeTab === 'financial' && filteredPayments.length > 0) {
+      const pendingAsaas = filteredPayments.filter(p => p.status === 'pending' && p.asaas_id);
+      if (pendingAsaas.length > 0) {
+        console.log(`[SYNC] Verificando status de ${pendingAsaas.length} faturas pendentes...`);
+        // Sincroniza apenas as 3 primeiras para não sobrecarregar
+        pendingAsaas.slice(0, 3).forEach(p => {
+          fetch(`/api/asaas/check-payment/${p.id}`).then(() => fetchData());
+        });
+      }
+    }
+  }, [activeTab]);
 
   const checkDbStatus = async () => {
     try {
@@ -1644,157 +1723,179 @@ export default function App() {
               )}
 
               {activeTab === 'financial' && (
-                <div className="space-y-6">
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="flex justify-between items-center">
-                    <h2 className="text-2xl font-bold">Gestão Financeira</h2>
-                    <button
-                      onClick={handleGeneratePayments}
-                      className="flex items-center space-x-2 bg-emerald-500 text-white px-4 py-2 rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 font-bold"
-                    >
-                      <Zap size={18} />
-                      <span>Gerar Mensalidades do Mês</span>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200">
-                      <p className="text-slate-500 text-sm font-medium mb-1">Total Recebido</p>
-                      <p className="text-2xl font-bold text-emerald-600">R$ {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.amount_paid || 0), 0).toLocaleString('pt-BR')}</p>
+                    <div>
+                      <h2 className="text-3xl font-black text-slate-800 tracking-tight">Situação das cobranças</h2>
+                      <p className="text-slate-500 font-medium">Gestão financeira em tempo real</p>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200">
-                      <p className="text-slate-500 text-sm font-medium mb-1">Pendente</p>
-                      <p className="text-2xl font-bold text-orange-500">R$ {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'pending').reduce((acc, curr) => {
-                        const contract = contracts.find(c => c.id === curr.contract_id);
-                        return acc + (contract?.rent_value || 0) + (contract?.charges || 0);
-                      }, 0).toLocaleString('pt-BR')}</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200">
-                      <p className="text-slate-500 text-sm font-medium mb-1">Total Repassado</p>
-                      <p className="text-2xl font-bold text-blue-600">R$ {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.transfer_amount || 0), 0).toLocaleString('pt-BR')}</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200">
-                      <p className="text-slate-500 text-sm font-medium mb-1">Comissões Corretores</p>
-                      <p className="text-2xl font-bold text-orange-600">R$ {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.broker_commission_value || 0), 0).toLocaleString('pt-BR')}</p>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                        <button className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold flex items-center gap-2">
+                          <Calendar size={16} />
+                          Este mês
+                        </button>
+                        <button className="px-4 py-1.5 text-slate-500 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2">
+                          <Filter size={16} />
+                          Filtros
+                        </button>
+                      </div>
+                      <button
+                        onClick={handleGeneratePayments}
+                        className="flex items-center space-x-2 bg-emerald-500 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 font-bold active:scale-95"
+                      >
+                        <Zap size={18} />
+                        <span>Gerar Mensalidades</span>
+                      </button>
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Inquilino</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Vencimento</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Recebimento</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Valor Pago</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Comissão</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Líquido Prop.</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Comissão Corr.</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Status</th>
-                          <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {payments.map(p => (
-                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 font-medium">{p.tenant_name}</td>
-                            <td className="px-6 py-4 text-slate-500">{formatDate(p.due_date)}</td>
-                            <td className="px-6 py-4 text-slate-500">{formatDate(p.received_date)}</td>
-                            <td className="px-6 py-4 font-medium text-emerald-600">
-                              <div>{p.amount_paid ? `R$ ${p.amount_paid.toLocaleString('pt-BR')}` : '-'}</div>
-                              {p.extra_payments && JSON.parse(p.extra_payments).length > 0 && (
-                                <div className="text-[10px] text-slate-400 font-normal">
-                                  +{JSON.parse(p.extra_payments).length} adicionais
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-slate-500">
-                              {p.commission_value ? `R$ ${p.commission_value.toLocaleString('pt-BR')}` : '-'}
-                            </td>
-                            <td className="px-6 py-4 font-semibold text-blue-600">
-                              <div>{p.transfer_amount ? `R$ ${p.transfer_amount.toLocaleString('pt-BR')}` : '-'}</div>
-                              {p.status === 'paid' && (
-                                <div className={`text-[10px] font-normal ${p.transfer_status === 'done' ? 'text-emerald-500' : 'text-orange-500'}`}>
-                                  {p.transfer_status === 'done' ? 'Repassado' : 'Pendente'}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-slate-500">
-                              {p.broker_commission_value ? `R$ ${p.broker_commission_value.toLocaleString('pt-BR')}` : '-'}
-                            </td>
-                            <td className="px-6 py-4">
-                              <StatusBadge status={p.status} />
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex space-x-2">
-                                <button
-                                  onClick={() => {
-                                    setSelectedPayment(p);
-                                    setDebtsValue(p.debts_value || 0);
-                                    setExtraPayments(p.extra_payments ? JSON.parse(p.extra_payments) : []);
-                                    setShowPaymentModal(true);
-                                  }}
-                                  className="text-emerald-500 hover:text-emerald-600 font-medium text-sm"
-                                >
-                                  {p.status === 'pending' ? 'Baixar' : 'Editar'}
-                                </button>
-                                {p.status === 'pending' && (
-                                  <button
-                                    onClick={() => handleAsaasPayment(p.id)}
-                                    className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
-                                    title="Gerar Boleto/Pix no Asaas"
-                                  >
-                                    <ExternalLink size={14} />
-                                    <span>Asaas</span>
-                                  </button>
-                                )}
-                                 {(p.asaas_id || (contracts.find(c => c.id === p.contract_id) as any)?.asaas_subscription_id) && (
-                                  <button
-                                    onClick={() => handleAsaasCheck(p.id)}
-                                    className="text-amber-500 hover:text-amber-600 font-medium text-sm flex items-center space-x-1"
-                                    title="Conferir status no Asaas"
-                                  >
-                                    <RefreshCw size={14} />
-                                    <span>Conferir</span>
-                                  </button>
-                                )}
-                                {p.status === 'paid' && p.transfer_status === 'pending' && (
-                                  <button
-                                    onClick={() => handleAsaasTransfer(p.id)}
-                                    className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
-                                    title="Realizar Repasse via Asaas"
-                                  >
-                                    <Zap size={14} />
-                                    <span>Repassar</span>
-                                  </button>
-                                )}
-                                {p.status === 'paid' && p.broker_transfer_status === 'pending' && (
-                                  <button
-                                    onClick={() => handleAsaasBrokerTransfer(p.id)}
-                                    className="text-purple-500 hover:text-purple-600 font-medium text-sm flex items-center space-x-1"
-                                    title="Pagar Comissão Corretor via Asaas"
-                                  >
-                                    <DollarSign size={14} />
-                                    <span>Comissão</span>
-                                  </button>
-                                )}
-                                {p.transfer_status === 'done' && (
-                                  <button
-                                    onClick={() => {
-                                      const property = properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id);
-                                      const owner = owners.find(o => o.id === property?.owner_id);
-                                      if (owner?.phone) {
-                                        const message = `Olá ${owner.name}, confirmamos que o repasse de R$ ${p.transfer_amount?.toLocaleString('pt-BR')} referente ao imóvel ${property?.address} foi concluído.`;
-                                        window.open(`https://wa.me/55${owner.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-                                      }
-                                    }}
-                                    className="text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center space-x-1"
-                                  >
-                                    <MessageCircle size={14} />
-                                    <span>Whats</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
+                  {/* Dashboard Grid similar ao Asaas */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Recebidas */}
+                    <FinancialCard 
+                      title="Recebidas"
+                      value={filteredPayments.filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.amount_paid || 0), 0)}
+                      liquidValue={filteredPayments.filter(p => p.status === 'paid').reduce((acc, curr) => acc + (curr.transfer_amount || 0), 0)}
+                      clients={new Set(filteredPayments.filter(p => p.status === 'paid').map(p => p.tenant_name)).size}
+                      charges={filteredPayments.filter(p => p.status === 'paid').length}
+                      color="emerald"
+                      progress={100}
+                    />
+                    
+                    {/* Confirmadas (Recentemente pagas no cartão/pix) */}
+                    <FinancialCard 
+                      title="Confirmadas"
+                      value={filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').reduce((acc, curr) => acc + (curr.amount_paid || 0), 0)}
+                      liquidValue={0}
+                      clients={new Set(filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').map(p => p.tenant_name)).size}
+                      charges={filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').length}
+                      color="blue"
+                      progress={0}
+                    />
+
+                    {/* Aguardando pagamento */}
+                    <FinancialCard 
+                      title="Aguardando pagamento"
+                      value={filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).reduce((acc, curr) => {
+                        const contract = contracts.find(c => c.id === curr.contract_id);
+                        return acc + (contract?.rent_value || 0) + (contract?.charges || 0);
+                      }, 0)}
+                      liquidValue={0}
+                      clients={new Set(filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).map(p => p.tenant_name)).size}
+                      charges={filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).length}
+                      color="amber"
+                      progress={0}
+                    />
+
+                    {/* Vencidas */}
+                    <FinancialCard 
+                      title="Vencidas"
+                      value={filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).reduce((acc, curr) => {
+                        const contract = contracts.find(c => c.id === curr.contract_id);
+                        return acc + (contract?.rent_value || 0) + (contract?.charges || 0);
+                      }, 0)}
+                      liquidValue={0}
+                      clients={new Set(filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).map(p => p.tenant_name)).size}
+                      charges={filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).length}
+                      color="red"
+                      progress={0}
+                    />
+                  </div>
+
+                  <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <List size={18} className="text-blue-500" />
+                        Detalhamento das Cobranças
+                      </h3>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mês Vigente</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50">
+                          <tr>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Inquilino</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Vencimento</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Status Asaas</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Valor</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Status</th>
+                            <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Ações</th>
                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {payments.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">
+                                Nenhuma fatura encontrada para este período.
+                              </td>
+                            </tr>
+                          ) : (
+                            payments.map(p => (
+                              <tr key={p.id} className="hover:bg-slate-50/80 transition-colors group">
+                                <td className="px-6 py-4">
+                                  <div className="font-bold text-slate-700">{p.tenant_name}</div>
+                                  <div className="text-[10px] text-slate-400 font-medium truncate max-w-[200px]">{p.address}</div>
+                                </td>
+                                <td className="px-6 py-4 text-slate-600 font-medium">{formatDate(p.due_date)}</td>
+                                <td className="px-6 py-4">
+                                  {p.asaas_status ? (
+                                    <span className="text-[10px] font-black px-2 py-1 bg-slate-100 text-slate-500 rounded-md">
+                                      {p.asaas_status}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300 italic">Não vinculado</span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="font-black text-slate-700">R$ {(p.amount_paid || contracts.find(c => c.id === p.contract_id)?.rent_value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <StatusBadge status={p.status} />
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {(p.asaas_id || (contracts.find(c => c.id === p.contract_id) as any)?.asaas_subscription_id) && (
+                                      <button
+                                        onClick={() => handleAsaasCheck(p.id)}
+                                        className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
+                                        title="Conferir status no Asaas"
+                                      >
+                                        <RefreshCw size={16} />
+                                      </button>
+                                    )}
+                                    {p.status === 'pending' && (
+                                      <button
+                                        onClick={() => handleAsaasPayment(p.id)}
+                                        className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Gerar no Asaas"
+                                      >
+                                        <ExternalLink size={16} />
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPayment(p);
+                                        setDebtsValue(p.debts_value || 0);
+                                        setExtraPayments(p.extra_payments ? JSON.parse(p.extra_payments) : []);
+                                        setShowPaymentModal(true);
+                                      }}
+                                      className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                                    >
+                                      <Settings size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+             </tr>
                         ))}
                       </tbody>
                     </table>
