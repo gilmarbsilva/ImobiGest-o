@@ -907,6 +907,7 @@ export default function App() {
           <SidebarItem id="maintenances" icon={RefreshCw} label="Manutenções" />
           <SidebarItem id="brokers" icon={UserPlus} label="Corretores" />
           <SidebarItem id="financial" icon={DollarSign} label="Financeiro" />
+          <SidebarItem id="repasse" icon={ArrowRightLeft} label="Repasses" />
           <SidebarItem id="reports" icon={BarChart3} label="Relatórios" />
           <SidebarItem id="manual" icon={BookOpen} label="Manual & Ajuda" />
         </nav>
@@ -1465,6 +1466,17 @@ export default function App() {
                           </td>
                           <td className="px-8 py-5">
                             <div className="flex space-x-2">
+                              <button 
+                                onClick={() => {
+                                  setSearchTerm(t.name);
+                                  setActiveTab('financial');
+                                  setShowFinancialFilters(true);
+                                }}
+                                className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                                title="Ver todas as cobranças deste inquilino"
+                              >
+                                <List size={18} />
+                              </button>
                               <button onClick={() => { setEditingItem(t); setModalType('tenants'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
                               <button onClick={() => handleDelete('tenants', t.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
@@ -1830,6 +1842,82 @@ export default function App() {
                           )}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'repasse' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-3xl font-black text-slate-800 tracking-tight">Gestão de Repasses</h2>
+                      <p className="text-slate-500 font-medium">Controle de pagamentos aos proprietários</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                      <h3 className="text-xl font-black mb-6 flex items-center gap-2 text-slate-800">
+                        <Clock size={20} className="text-amber-500" />
+                        Repasses Pendentes
+                      </h3>
+                      <div className="space-y-4">
+                        {payments.filter(p => p.status === 'paid' && p.transfer_status !== 'done').length === 0 ? (
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            <CheckCircle2 size={32} className="mx-auto text-emerald-300 mb-2" />
+                            <p className="text-slate-400 font-bold">Nenhum repasse pendente!</p>
+                          </div>
+                        ) : (
+                          payments.filter(p => p.status === 'paid' && p.transfer_status !== 'done').map(p => (
+                            <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group hover:border-blue-200 transition-all">
+                              <div>
+                                <p className="font-black text-slate-700">{p.owner_name || 'Proprietário'}</p>
+                                <p className="text-xs text-slate-500 font-medium">{p.address}</p>
+                                <div className="flex gap-2 mt-1">
+                                  <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">Ref: {formatDate(p.due_date)}</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-black text-blue-600">R$ {(p.transfer_amount || 0).toLocaleString('pt-BR')}</p>
+                                <button 
+                                  onClick={() => { setSelectedPayment(p); setShowRepasseModal(true); }}
+                                  className="mt-2 text-[10px] font-black text-white bg-blue-500 px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-all shadow-sm shadow-blue-100"
+                                >
+                                  REALIZAR REPASSE
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                      <h3 className="text-xl font-black mb-6 flex items-center gap-2 text-slate-800">
+                        <CheckCircle2 size={20} className="text-emerald-500" />
+                        Últimos Repasses Realizados
+                      </h3>
+                      <div className="space-y-4">
+                        {payments.filter(p => p.transfer_status === 'done').length === 0 ? (
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            <p className="text-slate-400 font-bold italic">Nenhum histórico encontrado.</p>
+                          </div>
+                        ) : (
+                          payments.filter(p => p.transfer_status === 'done').slice(0, 5).map(p => (
+                            <div key={p.id} className="p-4 bg-emerald-50/30 rounded-2xl border border-emerald-100/50 flex justify-between items-center">
+                              <div>
+                                <p className="font-black text-slate-700">{p.owner_name || 'Proprietário'}</p>
+                                <p className="text-xs text-slate-500 font-medium">{p.address}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-black text-emerald-600">R$ {(p.transfer_amount || 0).toLocaleString('pt-BR')}</p>
+                                <p className="text-[9px] font-black text-emerald-400 uppercase">Enviado em {formatDate(p.received_date || '')}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
