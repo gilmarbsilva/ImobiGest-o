@@ -43,7 +43,7 @@ import { Owner, Tenant, Property, Contract, Payment, Broker, Inspection, Mainten
 import Auth from './Auth';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const FinancialCard = ({ title, value, liquidValue, clients, charges, color, progress }: any) => {
+const FinancialCard = ({ title, value, liquidValue, clients, charges, color, progress, onClick, isActive }: any) => {
   const colors: any = {
     emerald: 'text-emerald-600 bg-emerald-50 border-emerald-100',
     blue: 'text-blue-600 bg-blue-50 border-blue-100',
@@ -59,10 +59,17 @@ const FinancialCard = ({ title, value, liquidValue, clients, charges, color, pro
   };
 
   return (
-    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+    <div 
+      onClick={onClick}
+      className={`p-6 rounded-[2rem] border transition-all cursor-pointer select-none active:scale-95 ${
+        isActive 
+          ? `bg-white border-${color}-500 shadow-lg shadow-${color}-100 ring-2 ring-${color}-500/20` 
+          : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-slate-200'
+      }`}
+    >
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-slate-500 text-sm font-bold">{title}</h3>
-        <div className="p-1.5 rounded-full bg-slate-50 text-slate-300 hover:text-blue-500 cursor-help">
+        <div className={`p-1.5 rounded-full ${isActive ? `bg-${color}-50 text-${color}-500` : 'bg-slate-50 text-slate-300'}`}>
           <HelpCircle size={14} />
         </div>
       </div>
@@ -86,19 +93,19 @@ const FinancialCard = ({ title, value, liquidValue, clients, charges, color, pro
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between text-slate-600 hover:text-blue-600 cursor-pointer group/row">
+        <div className="flex items-center justify-between text-slate-600 group/row">
           <div className="flex items-center gap-2">
-            <Users size={16} className="text-slate-400 group-hover/row:text-blue-500" />
+            <Users size={16} className="text-slate-400 group-hover:text-blue-500" />
             <span className="text-sm font-bold">{clients} {clients === 1 ? 'cliente' : 'clientes'}</span>
           </div>
-          <ChevronRight size={16} className="text-slate-300 group-hover/row:text-blue-500" />
+          <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500" />
         </div>
-        <div className="flex items-center justify-between text-slate-600 hover:text-blue-600 cursor-pointer group/row">
+        <div className="flex items-center justify-between text-slate-600 group/row">
           <div className="flex items-center gap-2">
-            <CreditCard size={16} className="text-slate-400 group-hover/row:text-blue-500" />
+            <CreditCard size={16} className="text-slate-400 group-hover:text-blue-500" />
             <span className="text-sm font-bold">{charges} {charges === 1 ? 'cobrança' : 'cobranças'}</span>
           </div>
-          <ChevronRight size={16} className="text-slate-300 group-hover/row:text-blue-500" />
+          <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500" />
         </div>
       </div>
     </div>
@@ -192,6 +199,10 @@ export default function App() {
   const [modalType, setModalType] = useState('');
   const [user, setUser] = useState<{ id: string | number, name: string, email?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+
+  const [paymentFilterStatus, setPaymentFilterStatus] = useState<string | null>(null);
+  const [showFinancialFilters, setShowFinancialFilters] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [dbStatus, setDbStatus] = useState<{ connected: boolean, error?: string, hasUsers?: boolean } | null>(null);
 
@@ -1735,7 +1746,10 @@ export default function App() {
                           <Calendar size={16} />
                           Este mês
                         </button>
-                        <button className="px-4 py-1.5 text-slate-500 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2">
+                        <button 
+                          onClick={() => setShowFinancialFilters(!showFinancialFilters)}
+                          className={`px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${showFinancialFilters ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                        >
                           <Filter size={16} />
                           Filtros
                         </button>
@@ -1750,6 +1764,57 @@ export default function App() {
                     </div>
                   </div>
 
+                  <AnimatePresence>
+                    {showFinancialFilters && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-wrap gap-4 items-end">
+                          <div className="flex-1 min-w-[200px] space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Buscar Inquilino ou Imóvel</label>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                              <input 
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Nome, endereço..."
+                                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Início</label>
+                            <input 
+                              type="date"
+                              value={reportStartDate}
+                              onChange={(e) => setReportStartDate(e.target.value)}
+                              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fim</label>
+                            <input 
+                              type="date"
+                              value={reportEndDate}
+                              onChange={(e) => setReportEndDate(e.target.value)}
+                              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                            />
+                          </div>
+                          <button 
+                            onClick={() => { setSearchTerm(''); setPaymentFilterStatus(null); }}
+                            className="px-4 py-2 text-rose-500 font-bold text-sm hover:bg-rose-50 rounded-xl transition-colors"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {/* Dashboard Grid similar ao Asaas */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {/* Recebidas */}
@@ -1761,6 +1826,8 @@ export default function App() {
                       charges={filteredPayments.filter(p => p.status === 'paid').length}
                       color="emerald"
                       progress={100}
+                      isActive={paymentFilterStatus === 'paid'}
+                      onClick={() => setPaymentFilterStatus(paymentFilterStatus === 'paid' ? null : 'paid')}
                     />
                     
                     {/* Confirmadas (Recentemente pagas no cartão/pix) */}
@@ -1772,6 +1839,8 @@ export default function App() {
                       charges={filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').length}
                       color="blue"
                       progress={0}
+                      isActive={paymentFilterStatus === 'CONFIRMED'}
+                      onClick={() => setPaymentFilterStatus(paymentFilterStatus === 'CONFIRMED' ? null : 'CONFIRMED')}
                     />
 
                     {/* Aguardando pagamento */}
@@ -1786,6 +1855,8 @@ export default function App() {
                       charges={filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).length}
                       color="amber"
                       progress={0}
+                      isActive={paymentFilterStatus === 'pending'}
+                      onClick={() => setPaymentFilterStatus(paymentFilterStatus === 'pending' ? null : 'pending')}
                     />
 
                     {/* Vencidas */}
@@ -1800,6 +1871,8 @@ export default function App() {
                       charges={filteredPayments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).length}
                       color="red"
                       progress={0}
+                      isActive={paymentFilterStatus === 'overdue'}
+                      onClick={() => setPaymentFilterStatus(paymentFilterStatus === 'overdue' ? null : 'overdue')}
                     />
                   </div>
 
@@ -1824,14 +1897,36 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {payments.length === 0 ? (
+                          {filteredPayments.filter(p => {
+                            // Filtro por Status do Card
+                            if (paymentFilterStatus === 'paid') return p.status === 'paid';
+                            if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
+                            if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
+                            if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
+                            return true;
+                          }).filter(p => {
+                            // Filtro de Busca
+                            if (!searchTerm) return true;
+                            const search = searchTerm.toLowerCase();
+                            return p.tenant_name?.toLowerCase().includes(search) || p.address?.toLowerCase().includes(search);
+                          }).length === 0 ? (
                             <tr>
                               <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">
-                                Nenhuma fatura encontrada para este período.
+                                Nenhuma fatura encontrada com estes filtros.
                               </td>
                             </tr>
                           ) : (
-                            payments.map(p => (
+                            filteredPayments.filter(p => {
+                              if (paymentFilterStatus === 'paid') return p.status === 'paid';
+                              if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
+                              if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
+                              if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
+                              return true;
+                            }).filter(p => {
+                              if (!searchTerm) return true;
+                              const search = searchTerm.toLowerCase();
+                              return p.tenant_name?.toLowerCase().includes(search) || p.address?.toLowerCase().includes(search);
+                            }).map(p => (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors group">
                                 <td className="px-6 py-4">
                                   <div className="font-bold text-slate-700">{p.tenant_name}</div>
