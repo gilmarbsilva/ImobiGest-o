@@ -1895,13 +1895,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-             </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
 
               {activeTab === 'reports' && (
                 <div className="space-y-6">
