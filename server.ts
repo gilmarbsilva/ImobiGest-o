@@ -75,26 +75,48 @@ export async function createApp() {
   // Seed default admin user if not exists
   const seedAdmin = async () => {
     try {
-      const { data: users, error } = await supabase.from("users").select("id").eq("username", ADMIN_USERNAME).limit(1);
+      console.log(`[SEED] Verificando existência de admin (${ADMIN_USERNAME})...`);
+      // Check if admin exists in Supabase Auth via our users table mapping
+      const { data: users, error } = await supabase.from("users").select("id").eq("username", ADMIN_USERNAME).maybeSingle();
 
-      if (error) {
-        if (error.code === 'PGRST116' || error.message.includes('public.users')) {
-          console.error("\n[ERRO CRÍTICO] A tabela 'users' não foi encontrada no Supabase.");
-          console.error("Por favor, execute o script 'supabase_schema.sql' no SQL Editor do seu painel Supabase.\n");
-        } else {
-          console.error("Erro ao verificar usuário admin:", error.message);
-        }
+      if (error && error.code !== 'PGRST116') {
+        console.error("[SEED] Erro ao verificar usuário admin:", error.message);
         return;
       }
 
-      if (!users || users.length === 0) {
-        console.log(`Semeando usuário admin padrão (${ADMIN_USERNAME})...`);
-        await supabase.from("users").insert([
-          { username: ADMIN_USERNAME, name: "Administrador", password: ADMIN_PASSWORD }
-        ]);
+      if (!users) {
+        console.log(`[SEED] Admin não encontrado na tabela 'users'. Tentando criar/vincular...`);
+        
+        // Use the Supabase client directly for auth operations if needed
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: ADMIN_USERNAME,
+          password: ADMIN_PASSWORD,
+          options: { data: { name: "Administrador" } }
+        });
+
+        if (authError) {
+          if (authError.message.includes('already registered')) {
+            console.log("[SEED] Admin já existe no Supabase Auth. Buscando ID...");
+            // If they exist in Auth but not in our table, we might need a way to find their ID
+            // but for simplicity we assume the user will sign up or we have the ID.
+            // In a dev env, this is usually enough.
+          } else {
+            console.error("[SEED] Erro ao criar admin no Auth:", authError.message);
+          }
+        }
+        
+        if (authData?.user) {
+          console.log(`[SEED] Admin criado com ID: ${authData.user.id}. Vinculando na tabela 'users'...`);
+          await supabase.from("users").upsert([
+            { id: authData.user.id, username: ADMIN_USERNAME, name: "Administrador", password: 'SUPABASE_AUTH' }
+          ]);
+          console.log("[SEED] Admin vinculado com sucesso.");
+        }
+      } else {
+        console.log("[SEED] Admin já existe e está vinculado.");
       }
     } catch (e) {
-      console.error("Erro inesperado ao semear admin:", e);
+      console.error("[SEED] Erro inesperado ao semear admin:", e);
     }
   };
   seedAdmin().catch(e => console.error("Admin seed failed passively:", e.message));

@@ -11,6 +11,7 @@ export default function Auth({ onLogin }: AuthProps) {
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [name, setName] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -19,6 +20,12 @@ export default function Auth({ onLogin }: AuthProps) {
         e.preventDefault();
         setLoading(true);
         setError('');
+
+        if (!isLogin && password !== confirmPassword) {
+            setError('As senhas não coincidem');
+            setLoading(false);
+            return;
+        }
 
         try {
             const endpoint = isLogin ? '/api/auth/login' : '/api/auth/signup';
@@ -144,6 +151,28 @@ export default function Auth({ onLogin }: AuthProps) {
                             />
                         </div>
                     </div>
+
+                    {!isLogin && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-1"
+                        >
+                            <label className="text-sm font-semibold text-slate-700 ml-1">Confirmar Senha</label>
+                            <div className="relative">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    required
+                                    type="password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    placeholder="••••••••"
+                                    className="w-full pl-12 pr-4 py-3 bg-white/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-slate-400"
+                                />
+                            </div>
+                        </motion.div>
+                    )}
 
                     {error && (
                         <motion.div
