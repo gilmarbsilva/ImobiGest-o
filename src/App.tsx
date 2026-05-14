@@ -204,6 +204,17 @@ export default function App() {
   const [showFinancialFilters, setShowFinancialFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Helpers de filtragem global
+  const filterList = (list: any[]) => {
+    if (!searchTerm) return list;
+    const search = searchTerm.toLowerCase();
+    return list.filter(item => 
+      Object.values(item).some(val => 
+        String(val).toLowerCase().includes(search)
+      )
+    );
+  };
+
   const [dbStatus, setDbStatus] = useState<{ connected: boolean, error?: string, hasUsers?: boolean } | null>(null);
 
   useEffect(() => {
@@ -940,6 +951,8 @@ export default function App() {
               <input
                 type="text"
                 placeholder="Buscar..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all w-64"
               />
             </div>
@@ -1084,325 +1097,228 @@ export default function App() {
                 </div>
               )}
               {activeTab === 'dashboard' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <StatCard icon={Users} label="Proprietários" value={owners.length} color="blue" />
-                    <StatCard icon={UserCheck} label="Inquilinos" value={tenants.length} color="emerald" />
-                    <StatCard icon={Home} label="Imóveis" value={properties.length} color="purple" />
-                    <StatCard icon={DollarSign} label="Receita Mensal" value={`R$ ${(Array.isArray(contracts) ? contracts : []).reduce((acc, curr) => acc + (curr.rent_value || 0), 0).toLocaleString('pt-BR')}`} color="orange" />
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-3xl font-black text-slate-800 tracking-tight">Visão Geral</h2>
+                      <p className="text-slate-500 font-medium">Resumo do desempenho da sua imobiliária</p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 space-y-6">
-                      <section>
-                        <h3 className="text-xl font-bold mb-4 flex items-center space-x-2">
-                          <DollarSign className="text-emerald-500" size={20} />
-                          <span>Previsão de Receita (6 Meses)</span>
-                        </h3>
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 h-80 shadow-sm">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={[
-                              { name: 'Jan', val: 4000 },
-                              { name: 'Fev', val: 3000 },
-                              { name: 'Mar', val: 2000 },
-                              { name: 'Abr', val: 2780 },
-                              { name: 'Mai', val: 1890 },
-                              { name: 'Jun', val: 2390 },
-                            ].map((d, i) => {
-                              const baseVal = (Array.isArray(contracts) ? contracts : []).reduce((acc, curr) => acc + (curr.rent_value || 0), 0);
-                              return { name: d.name, valor: baseVal * (1 + (i * 0.05)) };
-                            })}>
-                              <defs>
-                                <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
-                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                              <Tooltip
-                                contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
-                              />
-                              <Area type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
-                            </AreaChart>
-                          </ResponsiveContainer>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Ocupação Atual</h3>
+                        <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl">
+                          <Home size={20} />
                         </div>
-                      </section>
-
-                      <section>
-                        <h3 className="text-xl font-bold mb-4">Pagamentos Recentes</h3>
-                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                          <table className="w-full text-left">
-                            <thead className="bg-slate-50 border-b border-slate-200">
-                              <tr>
-                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Inquilino</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Imóvel</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Vencimento</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-slate-500">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {(Array.isArray(payments) ? payments : []).slice(0, 5).map(p => (
-                                <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                                  <td className="px-6 py-4 font-medium">{p.tenant_name}</td>
-                                  <td className="px-6 py-4 text-slate-500">{p.address}</td>
-                                  <td className="px-6 py-4 text-slate-500">{formatDate(p.due_date)}</td>
-                                  <td className="px-6 py-4">
-                                    <div className="flex space-x-2">
-                                      <StatusBadge status={p.status} />
-                                      {p.status === 'pending' && (
-                                        <button
-                                          onClick={() => handleAsaasPayment(p.id)}
-                                          className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
-                                          title="Gerar Boleto/Pix no Asaas"
-                                        >
-                                          <ExternalLink size={14} />
-                                          <span>Asaas</span>
-                                        </button>
-                                      )}
-                                      {p.status === 'paid' && p.transfer_status === 'pending' && (
-                                        <button
-                                          onClick={() => handleAsaasTransfer(p.id)}
-                                          className="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center space-x-1"
-                                          title="Realizar Repasse via Asaas"
-                                        >
-                                          <Zap size={14} />
-                                          <span>Repassar</span>
-                                        </button>
-                                      )}
-                                      {p.transfer_status === 'done' && (
-                                        <button
-                                          onClick={() => {
-                                            const property = properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id);
-                                            const owner = owners.find(o => o.id === property?.owner_id);
-                                            if (owner?.phone) {
-                                              const message = `Olá ${owner.name}, confirmamos que o repasse de R$ ${p.transfer_amount?.toLocaleString('pt-BR')} referente ao imóvel ${property?.address} foi concluído.`;
-                                              window.open(`https://wa.me/55${owner.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-                                            }
-                                          }}
-                                          className="text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center space-x-1"
-                                        >
-                                          <MessageCircle size={14} />
-                                          <span>Whats</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </section>
+                      </div>
+                      <div className="flex items-end gap-2 mb-4">
+                        <span className="text-4xl font-black text-slate-800">{contracts.length}</span>
+                        <span className="text-slate-400 font-bold mb-1">/ {properties.length} imóveis</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(contracts.length / (properties.length || 1)) * 100}%` }}
+                          className="bg-emerald-500 h-full"
+                        />
+                      </div>
                     </div>
 
-                    <div className="space-y-6">
-                      <section>
-                        <h3 className="text-xl font-bold mb-4">Ocupação</h3>
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                          <div className="flex items-center justify-between mb-4">
-                            <span className="text-slate-500 text-sm">Alugados</span>
-                            <span className="font-bold text-emerald-600">{contracts.length}</span>
-                          </div>
-                          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${(contracts.length / (properties.length || 1)) * 100}%` }}
-                              className="bg-emerald-500 h-full"
-                            />
-                          </div>
-                          <p className="text-[10px] text-slate-400 mt-2">De um total de {properties.length} imóveis</p>
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Faturamento Mês</h3>
+                        <div className="p-2 bg-blue-50 text-blue-500 rounded-xl">
+                          <DollarSign size={20} />
                         </div>
-                      </section>
+                      </div>
+                      <div className="mb-4">
+                        <span className="text-4xl font-black text-slate-800">
+                          R$ {payments.filter(p => p.status === 'paid').reduce((acc, p) => acc + (p.amount_paid || 0), 0).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 font-bold flex items-center gap-1">
+                        <TrendingUp size={14} className="text-emerald-500" />
+                        <span>Calculado com base em faturas pagas</span>
+                      </div>
+                    </div>
 
-                      <section>
-                        <h3 className="text-xl font-bold mb-4">Alertas e Pendências</h3>
-                        <div className="space-y-4">
-                          {(Array.isArray(inspections) ? inspections : []).filter(i => i.status === 'pending').map(i => (
-                            <div key={`insp-${i.id}`} className="p-4 rounded-2xl border flex items-start space-x-3 text-blue-600 bg-blue-50 border-blue-100">
-                              <div className="mt-0.5"><ShieldCheck size={18} /></div>
-                              <div>
-                                <p className="text-sm font-bold">Vistoria Pendente</p>
-                                <p className="text-xs opacity-80">{i.address} - {i.type}</p>
-                              </div>
-                            </div>
-                          ))}
-                          {(Array.isArray(maintenances) ? maintenances : []).filter(m => m.status === 'pending').map(m => (
-                            <div key={`maint-${m.id}`} className="p-4 rounded-2xl border flex items-start space-x-3 text-orange-600 bg-orange-50 border-orange-100">
-                              <div className="mt-0.5"><RefreshCw size={18} /></div>
-                              <div>
-                                <p className="text-sm font-bold">Manutenção Pendente</p>
-                                <p className="text-xs opacity-80">{m.address} - {m.description}</p>
-                              </div>
-                            </div>
-                          ))}
-                          {(Array.isArray(contracts) ? contracts : []).map(c => {
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Inquilinos Ativos</h3>
+                        <div className="p-2 bg-amber-50 text-amber-500 rounded-xl">
+                          <Users size={20} />
+                        </div>
+                      </div>
+                      <div className="mb-4">
+                        <span className="text-4xl font-black text-slate-800">{tenants.length}</span>
+                      </div>
+                      <div className="flex -space-x-2">
+                        {tenants.slice(0, 5).map((t, i) => (
+                          <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500">
+                            {t.name.charAt(0)}
+                          </div>
+                        ))}
+                        {tenants.length > 5 && (
+                          <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                            +{tenants.length - 5}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <section className="space-y-4">
+                      <div className="flex justify-between items-center px-2">
+                        <h3 className="text-lg font-black text-slate-700">Alertas Críticos</h3>
+                        <span className="px-3 py-1 bg-rose-50 text-rose-500 text-xs font-bold rounded-full">Atenção Necessária</span>
+                      </div>
+                      <div className="space-y-3">
+                        {(() => {
+                          const alerts: any[] = [];
+                          
+                          // Expiration alerts
+                          contracts.forEach(c => {
                             const today = new Date();
                             const endDate = new Date(c.end_date);
-                            const startDate = new Date(c.start_date);
                             const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-                            const alerts = [];
-
-                            // Expiration Alert (within 60 days)
-                            if (diffDays <= 60 && diffDays > 0) {
+                            if (diffDays <= 60) {
                               alerts.push({
-                                type: 'expiration',
-                                title: 'Contrato Vencendo',
-                                desc: `O contrato de ${c.tenant_name} vence em ${diffDays} dias.`,
-                                icon: Clock,
-                                color: 'text-rose-600 bg-rose-50 border-rose-100'
-                              });
-                            } else if (diffDays <= 0) {
-                              alerts.push({
-                                type: 'expiration',
-                                title: 'Contrato Vencido',
-                                desc: `O contrato de ${c.tenant_name} venceu em ${formatDate(c.end_date)}.`,
-                                icon: AlertCircle,
-                                color: 'text-rose-700 bg-rose-100 border-rose-200'
+                                title: diffDays <= 0 ? 'Contrato Vencido' : 'Contrato Vencendo',
+                                desc: `${c.tenant_name} (${c.address})`,
+                                icon: diffDays <= 0 ? <AlertCircle size={18} /> : <Clock size={18} />,
+                                color: diffDays <= 0 ? 'text-rose-700 bg-rose-50 border-rose-100' : 'text-amber-700 bg-amber-50 border-amber-100'
                               });
                             }
+                          });
 
-                            // Annual Adjustment Alert (same month as start_date, but different year)
-                            const isAdjustmentMonth = today.getMonth() === startDate.getMonth() && today.getFullYear() > startDate.getFullYear();
-                            if (isAdjustmentMonth) {
-                              alerts.push({
-                                type: 'adjustment',
-                                title: 'Reajuste Anual',
-                                desc: `Mês de reajuste para ${c.tenant_name} (${c.address}).`,
-                                icon: ArrowRightLeft,
-                                color: 'text-amber-600 bg-amber-50 border-amber-100'
-                              });
-                            }
+                          // Maintenance alerts
+                          maintenances.filter(m => m.status === 'pending').forEach(m => {
+                            alerts.push({
+                              title: 'Manutenção Pendente',
+                              desc: `${m.address}: ${m.description}`,
+                              icon: <Wrench size={18} />,
+                              color: 'text-orange-700 bg-orange-50 border-orange-100'
+                            });
+                          });
 
-                            return alerts.map((alert, idx) => (
-                              <div key={`${c.id}-${idx}`} className={`p-4 rounded-2xl border flex items-start space-x-3 ${alert.color}`}>
-                                <div className="mt-0.5">
-                                  <alert.icon size={18} />
-                                </div>
-                                <div>
-                                  <p className="text-sm font-bold">{alert.title}</p>
-                                  <p className="text-xs opacity-80">{alert.desc}</p>
-                                </div>
+                          return alerts.length > 0 ? alerts.map((a, i) => (
+                            <div key={i} className={`p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] ${a.color}`}>
+                              <div className="p-2 rounded-xl bg-white/50">{a.icon}</div>
+                              <div>
+                                <p className="font-bold text-sm">{a.title}</p>
+                                <p className="text-xs opacity-70">{a.desc}</p>
                               </div>
-                            ));
-                          })}
-                          {contracts.length === 0 && (
-                            <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
-                              <p className="text-sm">Nenhum alerta no momento.</p>
                             </div>
-                          )}
-                        </div>
-                      </section>
-                    </div>
+                          )) : (
+                            <div className="p-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                              <CheckCircle2 size={32} className="mx-auto text-emerald-300 mb-2" />
+                              <p className="text-slate-400 font-bold">Tudo em dia!</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </section>
+
+                    <section className="space-y-4">
+                      <div className="flex justify-between items-center px-2">
+                        <h3 className="text-lg font-black text-slate-700">Ações Rápidas</h3>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button 
+                          onClick={() => { setModalType('contracts'); setShowModal(true); }}
+                          className="p-6 bg-emerald-50 text-emerald-700 rounded-3xl border border-emerald-100 flex flex-col items-center gap-3 hover:bg-emerald-100 transition-all group"
+                        >
+                          <div className="p-3 bg-white rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                            <Plus size={24} />
+                          </div>
+                          <span className="font-black text-xs uppercase tracking-widest">Novo Contrato</span>
+                        </button>
+                        <button 
+                          onClick={() => { setModalType('properties'); setShowModal(true); }}
+                          className="p-6 bg-blue-50 text-blue-700 rounded-3xl border border-blue-100 flex flex-col items-center gap-3 hover:bg-blue-100 transition-all group"
+                        >
+                          <div className="p-3 bg-white rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                            <Home size={24} />
+                          </div>
+                          <span className="font-black text-xs uppercase tracking-widest">Cadastrar Imóvel</span>
+                        </button>
+                      </div>
+                    </section>
                   </div>
                 </div>
               )}
 
               {activeTab === 'brokers' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Nome</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Email</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Telefone</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Documento</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Corretor</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contato</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(brokers) ? brokers : []).map(b => (
-                        <tr key={b.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 font-medium">{b.name}</td>
-                          <td className="px-6 py-4 text-slate-500">{b.email}</td>
-                          <td className="px-6 py-4 text-slate-500">{b.phone}</td>
-                          <td className="px-6 py-4 text-slate-500">{b.document}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex space-x-3">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(b);
-                                  setModalType('brokers');
-                                  setShowModal(true);
-                                }}
-                                className="text-emerald-600 hover:text-emerald-700 font-bold text-sm"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete('brokers', b.id)}
-                                className="text-rose-500 hover:text-rose-600"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(brokers).length === 0 ? (
+                        <tr><td colSpan={3} className="px-8 py-16 text-center text-slate-400 italic">Nenhum corretor encontrado.</td></tr>
+                      ) : filterList(brokers).map(b => (
+                        <tr key={b.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <div className="font-black text-slate-700">{b.name}</div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Doc: {b.document}</div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex flex-col">
+                              <span className="text-sm text-slate-600 font-medium">{b.email}</span>
+                              <span className="text-xs text-slate-400">{b.phone}</span>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex space-x-2">
+                              <button onClick={() => { setEditingItem(b); setModalType('brokers'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('brokers', b.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
                       ))}
-                      {brokers.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                            Nenhum corretor cadastrado.
-                          </td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                 </div>
               )}
 
               {activeTab === 'inspections' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Imóvel</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Tipo</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Data</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Status</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Fotos</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel / Tipo</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Data / Status</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(inspections) ? inspections : []).map(i => (
-                        <tr key={i.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 font-medium">{i.address}</td>
-                          <td className="px-6 py-4 text-slate-500 capitalize">{i.type}</td>
-                          <td className="px-6 py-4 text-slate-500">{formatDate(i.date)}</td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${i.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(inspections).length === 0 ? (
+                        <tr><td colSpan={3} className="px-8 py-16 text-center text-slate-400 italic">Nenhuma vistoria encontrada.</td></tr>
+                      ) : filterList(inspections).map(i => (
+                        <tr key={i.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <div className="font-black text-slate-700">{i.address}</div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{i.type}</div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="text-sm font-bold text-slate-600">{formatDate(i.date)}</div>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${i.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
                               {i.status === 'completed' ? 'Concluída' : 'Pendente'}
                             </span>
                           </td>
-                          <td className="px-6 py-4">
-                            {i.photos_link ? (
-                              <a href={i.photos_link} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline flex items-center space-x-1">
-                                <ExternalLink size={14} />
-                                <span>Ver Fotos</span>
-                              </a>
-                            ) : '-'}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex space-x-3">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(i);
-                                  setModalType('inspections');
-                                  setShowModal(true);
-                                }}
-                                className="text-emerald-600 hover:text-emerald-700 font-bold text-sm"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete('inspections', i.id)}
-                                className="text-rose-500 hover:text-rose-600"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                          <td className="px-8 py-5">
+                            <div className="flex space-x-2">
+                              {i.photos_link && <button onClick={() => window.open(i.photos_link, '_blank')} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><ExternalLink size={18} /></button>}
+                              <button onClick={() => { setEditingItem(i); setModalType('inspections'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('inspections', i.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1413,54 +1329,40 @@ export default function App() {
               )}
 
               {activeTab === 'maintenances' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Imóvel</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Descrição</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Data Pedido</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Custo Est.</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Status</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Pago Por</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel / Descrição</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Status / Custo</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Responsável</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(maintenances) ? maintenances : []).map(m => (
-                        <tr key={m.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 font-medium">{m.address}</td>
-                          <td className="px-6 py-4 text-slate-500 truncate max-w-[200px]">{m.description}</td>
-                          <td className="px-6 py-4 text-slate-500">{formatDate(m.request_date)}</td>
-                          <td className="px-6 py-4 text-slate-500">R$ {m.estimated_cost.toLocaleString('pt-BR')}</td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${m.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                              m.status === 'approved' ? 'bg-blue-100 text-blue-700' :
-                                m.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
-                                  'bg-orange-100 text-orange-700'
-                              }`}>
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(maintenances).length === 0 ? (
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhuma manutenção encontrada.</td></tr>
+                      ) : filterList(maintenances).map(m => (
+                        <tr key={m.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <div className="font-black text-slate-700">{m.address}</div>
+                            <div className="text-xs text-slate-400 font-medium truncate max-w-[200px]">{m.description}</div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${
+                              m.status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
+                              m.status === 'approved' ? 'bg-blue-100 text-blue-600' :
+                              m.status === 'rejected' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'
+                            }`}>
                               {m.status === 'completed' ? 'Concluído' : m.status === 'approved' ? 'Aprovado' : m.status === 'rejected' ? 'Rejeitado' : 'Pendente'}
                             </span>
+                            <div className="text-sm font-black text-slate-600 mt-1">R$ {m.estimated_cost.toLocaleString('pt-BR')}</div>
                           </td>
-                          <td className="px-6 py-4 text-slate-500 capitalize">{m.paid_by || '-'}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex space-x-3">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(m);
-                                  setModalType('maintenances');
-                                  setShowModal(true);
-                                }}
-                                className="text-emerald-600 hover:text-emerald-700 font-bold text-sm"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete('maintenances', m.id)}
-                                className="text-rose-500 hover:text-rose-600"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                          <td className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-widest">{m.paid_by || '-'}</td>
+                          <td className="px-8 py-5">
+                            <div className="flex space-x-2">
+                              <button onClick={() => { setEditingItem(m); setModalType('maintenances'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('maintenances', m.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1471,41 +1373,47 @@ export default function App() {
               )}
 
               {activeTab === 'owners' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Nome</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Email</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Telefone</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Documento</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Proprietário</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contato</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Documento</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(owners) ? owners : []).map(o => (
-                        <tr key={o.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 font-medium">{o.name}</td>
-                          <td className="px-6 py-4 text-slate-500">{o.email}</td>
-                          <td className="px-6 py-4 text-slate-500">{o.phone}</td>
-                          <td className="px-6 py-4 text-slate-500">{o.document}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex space-x-3">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(o);
-                                  setModalType('owners');
-                                  setShowModal(true);
-                                }}
-                                className="text-emerald-500 hover:text-emerald-600 font-medium text-sm"
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(owners).length === 0 ? (
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum proprietário encontrado.</td></tr>
+                      ) : filterList(owners).map(o => (
+                        <tr key={o.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <div className="font-black text-slate-700">{o.name}</div>
+                            <div className="text-xs text-slate-400 font-bold">ID: {o.id.toString().slice(0, 8)}</div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex flex-col">
+                              <span className="text-sm text-slate-600 font-medium">{o.email}</span>
+                              <span className="text-xs text-slate-400">{o.phone}</span>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5 text-sm text-slate-500 font-medium">{o.document}</td>
+                          <td className="px-8 py-5">
+                            <div className="flex space-x-2">
+                              <button 
+                                onClick={() => { setEditingItem(o); setModalType('owners'); setShowModal(true); }}
+                                className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
+                                title="Editar"
                               >
-                                Editar
+                                <Settings size={18} />
                               </button>
-                              <button
+                              <button 
                                 onClick={() => handleDelete('owners', o.id)}
-                                className="text-rose-500 hover:text-rose-600"
+                                className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                title="Excluir"
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={18} />
                               </button>
                             </div>
                           </td>
@@ -1517,50 +1425,44 @@ export default function App() {
               )}
 
               {activeTab === 'tenants' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Nome</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Email</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Telefone</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Documento</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Inquilino</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contato</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Status Asaas</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(tenants) ? tenants : []).map(t => (
-                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 font-medium">{t.name}</td>
-                          <td className="px-6 py-4 text-slate-500">{t.email}</td>
-                          <td className="px-6 py-4 text-slate-500">{t.phone}</td>
-                          <td className="px-6 py-4 text-slate-500">{t.document}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex space-x-3">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(t);
-                                  setModalType('tenants');
-                                  setShowModal(true);
-                                }}
-                                className="text-emerald-500 hover:text-emerald-600 font-medium text-sm"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete('tenants', t.id)}
-                                className="text-rose-500 hover:text-rose-600"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleAsaasSync(t.id)}
-                                className={`flex items-center space-x-1 font-medium text-sm ${(t as any).asaas_id ? 'text-blue-500' : 'text-slate-400'}`}
-                                title={(t as any).asaas_id ? 'Sincronizado' : 'Sincronizar com Asaas'}
-                              >
-                                <Zap size={14} fill={(t as any).asaas_id ? 'currentColor' : 'none'} />
-                                <span>{(t as any).asaas_id ? 'Asaas OK' : 'Sinc. Asaas'}</span>
-                              </button>
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(tenants).length === 0 ? (
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum inquilino encontrado.</td></tr>
+                      ) : filterList(tenants).map(t => (
+                        <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <div className="font-black text-slate-700">{t.name}</div>
+                            <div className="text-xs text-slate-400 font-bold">{t.document}</div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex flex-col">
+                              <span className="text-sm text-slate-600 font-medium">{t.email}</span>
+                              <span className="text-xs text-slate-400">{t.phone}</span>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <button 
+                              onClick={() => handleAsaasSync(t.id)}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${(t as any).asaas_id ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                            >
+                              <Zap size={14} fill={(t as any).asaas_id ? 'currentColor' : 'none'} />
+                              {(t as any).asaas_id ? 'CONECTADO' : 'SINCRONIZAR'}
+                            </button>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex space-x-2">
+                              <button onClick={() => { setEditingItem(t); setModalType('tenants'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('tenants', t.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1571,53 +1473,42 @@ export default function App() {
               )}
 
               {activeTab === 'properties' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Endereço</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Tipo</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Tamanho (m²)</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Quartos</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Banheiros</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Vagas</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Pet</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Uso</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Proprietário</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Características</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Proprietário</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(properties) ? properties : []).map(p => (
-                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4 font-medium">{p.address}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.type}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.size}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.rooms}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.bathrooms}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.garage_spaces}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.pets_allowed ? 'Sim' : 'Não'}</td>
-                          <td className="px-6 py-4 text-slate-500 capitalize">{p.usage_type}</td>
-                          <td className="px-6 py-4 text-slate-500">{p.owner_name}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex space-x-3">
-                              <button
-                                onClick={() => {
-                                  setEditingItem(p);
-                                  setModalType('properties');
-                                  setSecondaryOwners(p.secondary_owners || []);
-                                  setShowModal(true);
-                                }}
-                                className="text-emerald-500 hover:text-emerald-600 font-medium text-sm"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete('properties', p.id)}
-                                className="text-rose-500 hover:text-rose-600"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(properties).length === 0 ? (
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum imóvel encontrado.</td></tr>
+                      ) : filterList(properties).map(p => (
+                        <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                          <td className="px-8 py-5">
+                            <div className="font-black text-slate-700">{p.address}</div>
+                            <div className="flex gap-2 mt-1">
+                              <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.type}</span>
+                              <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.usage_type}</span>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex items-center gap-4 text-slate-400">
+                              <div className="flex items-center gap-1"><span className="text-sm font-black text-slate-600">{p.rooms}</span> <span className="text-[10px] font-bold uppercase">Q</span></div>
+                              <div className="flex items-center gap-1"><span className="text-sm font-black text-slate-600">{p.bathrooms}</span> <span className="text-[10px] font-bold uppercase">B</span></div>
+                              <div className="flex items-center gap-1"><span className="text-sm font-black text-slate-600">{p.size}</span> <span className="text-[10px] font-bold uppercase">m²</span></div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="text-sm font-bold text-slate-600">{p.owner_name}</div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="flex space-x-2">
+                              <button onClick={() => { setEditingItem(p); setModalType('properties'); setSecondaryOwners(p.secondary_owners || []); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('properties', p.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1628,100 +1519,49 @@ export default function App() {
               )}
 
               {activeTab === 'contracts' && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Imóvel</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Inquilino</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Valor Base</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Taxas (IPTU/Condo)</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Vigência</th>
-                        <th className="px-6 py-4 text-sm font-semibold text-slate-500">Ações</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contrato / Imóvel</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Inquilino</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Financeiro</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Vigência</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(Array.isArray(contracts) ? contracts : []).map(c => {
+                    <tbody className="divide-y divide-slate-50">
+                      {filterList(contracts).length === 0 ? (
+                        <tr><td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic">Nenhum contrato encontrado.</td></tr>
+                      ) : filterList(contracts).map(c => {
                         const extras = c.extra_charges ? JSON.parse(c.extra_charges) : [];
                         return (
-                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 font-medium">{c.address}</td>
-                            <td className="px-6 py-4 text-slate-500">{c.tenant_name}</td>
-                            <td className="px-6 py-4 font-semibold text-emerald-600">R$ {c.rent_value.toLocaleString('pt-BR')}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col space-y-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400 w-10">IPTU:</span>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${c.iptu_status === 'paid' ? 'bg-emerald-100 text-emerald-700' : c.iptu_status === 'n/a' ? 'bg-slate-100 text-slate-500' : 'bg-orange-100 text-orange-700'}`}>
-                                    {c.iptu_status === 'paid' ? 'PAGO' : c.iptu_status === 'n/a' ? 'N/A' : 'PENDENTE'}
-                                  </span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400 w-10">CONDO:</span>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${c.condo_status === 'paid' ? 'bg-emerald-100 text-emerald-700' : c.condo_status === 'n/a' ? 'bg-slate-100 text-slate-500' : 'bg-orange-100 text-orange-700'}`}>
-                                    {c.condo_status === 'paid' ? 'PAGO' : c.condo_status === 'n/a' ? 'N/A' : 'PENDENTE'}
-                                  </span>
-                                </div>
+                          <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
+                            <td className="px-8 py-5">
+                              <div className="font-black text-slate-700">{c.address}</div>
+                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">ID: {c.id}</div>
+                            </td>
+                            <td className="px-8 py-5">
+                              <div className="text-sm font-bold text-slate-600">{c.tenant_name}</div>
+                            </td>
+                            <td className="px-8 py-5">
+                              <div className="font-black text-emerald-600">R$ {c.rent_value.toLocaleString('pt-BR')}</div>
+                              <div className="flex gap-1 mt-1">
+                                <div className={`w-2 h-2 rounded-full ${c.iptu_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="IPTU" />
+                                <div className={`w-2 h-2 rounded-full ${c.condo_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="Condomínio" />
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-slate-500">
-                              <div className="text-sm">{formatDate(c.start_date)} até {formatDate(c.end_date)}</div>
-                              {c.next_adjustment_date && (
-                                <div className="text-[10px] text-orange-500 font-medium">Reajuste: {formatDate(c.next_adjustment_date)}</div>
-                              )}
+                            <td className="px-8 py-5">
+                              <div className="text-xs font-bold text-slate-500">{formatDate(c.start_date)} - {formatDate(c.end_date)}</div>
                             </td>
-                            <td className="px-6 py-4">
-                              <div className="flex space-x-3">
-                                <button
-                                  onClick={() => {
-                                    setEditingItem(c);
-                                    setModalType('contracts');
-                                    setExtraCharges(extras);
-                                    setShowModal(true);
-                                  }}
-                                  className="text-emerald-500 hover:text-emerald-600 font-medium text-sm"
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  onClick={() => handleDelete('contracts', c.id)}
-                                  className="text-rose-500 hover:text-rose-600"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                                {c.document_links && (
-                                  <button
-                                    onClick={() => window.open(c.document_links, '_blank')}
-                                    className="text-blue-500 hover:text-blue-600"
-                                    title="Ver Contrato"
-                                  >
-                                    <FileText size={16} />
-                                  </button>
-                                )}
-                                {!(c as any).asaas_subscription_id && (
-                                  <button
-                                    onClick={() => handleAsaasSubscription(c.id)}
-                                    className="text-blue-600 hover:text-blue-700 font-bold text-sm flex items-center space-x-1"
-                                    title="Criar Assinatura no Asaas"
-                                  >
-                                    <Zap size={14} />
-                                    <span>Assinatura</span>
-                                  </button>
-                                )}
-                                {(c as any).asaas_subscription_id && (
-                                  <>
-                                    <div className="flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
-                                      <CheckCircle2 size={12} />
-                                      <span>ASSINATURA ATIVA</span>
-                                    </div>
-                                    <button
-                                      onClick={() => handleCheckSubscription(c.id)}
-                                      className="text-slate-400 hover:text-blue-500 transition-colors ml-2"
-                                      title="Verificar status no Asaas"
-                                    >
-                                      <RefreshCw size={12} />
-                                    </button>
-                                  </>
+                            <td className="px-8 py-5">
+                              <div className="flex space-x-2">
+                                <button onClick={() => { setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                                <button onClick={() => handleDelete('contracts', c.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
+                                {!(c as any).asaas_subscription_id ? (
+                                  <button onClick={() => handleAsaasSubscription(c.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Criar Assinatura Asaas"><Zap size={18} /></button>
+                                ) : (
+                                  <button onClick={() => handleCheckSubscription(c.id)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Verificar Assinatura"><CheckCircle2 size={18} /></button>
                                 )}
                               </div>
                             </td>
@@ -1834,7 +1674,7 @@ export default function App() {
                     <FinancialCard 
                       title="Confirmadas"
                       value={filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').reduce((acc, curr) => acc + (curr.amount_paid || 0), 0)}
-                      liquidValue={0}
+                      liquidValue={filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').reduce((acc, curr) => acc + (curr.transfer_amount || 0), 0)}
                       clients={new Set(filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').map(p => p.tenant_name)).size}
                       charges={filteredPayments.filter(p => p.asaas_status === 'CONFIRMED').length}
                       color="blue"
