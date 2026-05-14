@@ -650,83 +650,85 @@ export async function createApp() {
       if (payment) {
         console.log(`Cobrança associada: ${payment.id} (Ref: ${payment.externalReference})`);
         
-        if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
+        if (event === "PAYMENT_CREATED" || event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
           let localPaymentId = payment.externalReference;
         
-        // Se for um pagamento de assinatura, o externalReference pode não estar presente no pagamento individual
-        // ou pode ser diferente. O Asaas envia o subscriptionId.
-        if (!localPaymentId && payment.subscription) {
-          console.log(`Pagamento de assinatura detectado: ${payment.subscription}`);
-          // Lógica para encontrar ou criar o registro de pagamento local baseado na assinatura
-          const { data: contract } = await supabase.from("contracts").select("id, fees, broker_commission_percent").eq("asaas_subscription_id", payment.subscription).single();
-          if (contract) {
-            // Verificar se já existe um registro de pagamento para este vencimento
-            const { data: existingPayment } = await supabase.from("payments")
-              .select("id")
-              .eq("contract_id", contract.id)
-              .eq("due_date", payment.dueDate)
-              .maybeSingle();
+          // Se for um pagamento de assinatura, o externalReference pode não estar presente no pagamento individual
+          // ou pode ser diferente. O Asaas envia o subscriptionId.
+          if (!localPaymentId && payment.subscription) {
+            console.log(`Pagamento de assinatura detectado: ${payment.subscription}`);
+            // Lógica para encontrar ou criar o registro de pagamento local baseado na assinatura
+            const { data: contract } = await supabase.from("contracts").select("id, fees, broker_commission_percent").eq("asaas_subscription_id", payment.subscription).single();
+            if (contract) {
+              // Verificar se já existe um registro de pagamento para este vencimento ou com este asaas_id
+              const { data: existingPayment } = await supabase.from("payments")
+                .select("id, status")
+                .or(`asaas_id.eq.${payment.id},and(contract_id.eq.${contract.id},due_date.eq.${payment.dueDate})`)
+                .maybeSingle();
 
-            if (existingPayment) {
-              localPaymentId = existingPayment.id.toString();
-            } else {
-              // Criar novo registro de pagamento se não existir (conciliação retroativa)
-              const { data: newPayment } = await supabase.from("payments").insert([{
-                contract_id: contract.id,
-                due_date: payment.dueDate,
-                status: 'paid',
-                asaas_id: payment.id,
-                asaas_status: 'RECEIVED'
-              }]).select().single();
-              localPaymentId = newPayment.id.toString();
+              if (existingPayment) {
+                localPaymentId = existingPayment.id.toString();
+              } else {
+                // Criar novo registro de pagamento se não existir
+                const { data: newPayment } = await supabase.from("payments").insert([{
+                  contract_id: contract.id,
+                  due_date: payment.dueDate,
+                  status: (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") ? 'paid' : 'pending',
+                  asaas_id: payment.id,
+                  asaas_status: payment.status
+                }]).select().single();
+                if (newPayment) localPaymentId = newPayment.id.toString();
+              }
             }
           }
-        }
 
-        if (localPaymentId) {
-          const { data: localPayment, error } = await supabase
-            .from("payments")
-            .select("*, contracts(fees, broker_commission_percent)")
-            .eq("id", localPaymentId)
-            .single();
+          if (localPaymentId) {
+            const { data: localPayment, error } = await supabase
+              .from("payments")
+              .select("*, contracts(fees, broker_commission_percent)")
+              .eq("id", localPaymentId)
+              .single();
 
-          if (localPayment && !error) {
-            const amountPaid = payment.value;
-            const commissionPercent = localPayment.contracts?.fees || 0;
-            const commissionValue = (amountPaid * commissionPercent) / 100;
+            if (localPayment && !error) {
+              const amountPaid = payment.value;
+              const commissionPercent = localPayment.contracts?.fees || 0;
+              const commissionValue = (amountPaid * commissionPercent) / 100;
 
-            const brokerCommissionPercent = localPayment.contracts?.broker_commission_percent || 0;
-            const brokerCommissionValue = (amountPaid * brokerCommissionPercent) / 100;
+              const brokerCommissionPercent = localPayment.contracts?.broker_commission_percent || 0;
+              const brokerCommissionValue = (amountPaid * brokerCommissionPercent) / 100;
 
-            const debtsValue = localPayment.debts_value || 0;
-            const transferAmount = amountPaid - commissionValue - brokerCommissionValue - debtsValue;
+              const debtsValue = localPayment.debts_value || 0;
+              const transferAmount = amountPaid - commissionValue - brokerCommissionValue - debtsValue;
 
-            await supabase.from("payments")
-              .update({
-                status: 'paid',
-                received_date: payment.paymentDate || new Date().toISOString().split('T')[0],
-                amount_paid: amountPaid,
-                commission_value: commissionValue,
-                broker_commission_value: brokerCommissionValue,
-                transfer_amount: transferAmount,
-                asaas_status: 'RECEIVED',
+              const updates: any = {
+                asaas_id: payment.id,
+                asaas_status: payment.status,
                 payment_method: payment.billingType
-              })
-              .eq("id", localPayment.id);
+              };
 
-            console.log(`Pagamento ${localPayment.id} conciliado via Webhook. Repasse: ${transferAmount}`);
+              if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
+                updates.status = 'paid';
+                updates.received_date = payment.paymentDate || new Date().toISOString().split('T')[0];
+                updates.amount_paid = amountPaid;
+                updates.commission_value = commissionValue;
+                updates.broker_commission_value = brokerCommissionValue;
+                updates.transfer_amount = transferAmount;
+              }
+
+              await supabase.from("payments").update(updates).eq("id", localPayment.id);
+              console.log(`Pagamento ${localPayment.id} atualizado via Webhook (${event}).`);
+            }
           }
+        } else if (event === "PAYMENT_OVERDUE") {
+          await supabase.from("payments").update({ asaas_status: 'OVERDUE' }).eq("asaas_id", payment.id);
+          console.log(`Pagamento ${payment.id} marcado como VENCIDO.`);
+        } else if (event === "PAYMENT_DELETED") {
+          await supabase.from("payments").update({ asaas_status: 'DELETED', status: 'pending' }).eq("asaas_id", payment.id);
+          console.log(`Pagamento ${payment.id} excluído no Asaas.`);
+        } else if (event === "PAYMENT_REFUNDED") {
+          await supabase.from("payments").update({ asaas_status: 'REFUNDED', status: 'pending' }).eq("asaas_id", payment.id);
+          console.log(`Pagamento ${payment.id} estornado.`);
         }
-      } else if (event === "PAYMENT_OVERDUE") {
-        await supabase.from("payments").update({ asaas_status: 'OVERDUE' }).eq("asaas_id", payment.id);
-        console.log(`Pagamento ${payment.id} marcado como VENCIDO.`);
-      } else if (event === "PAYMENT_DELETED") {
-        await supabase.from("payments").update({ asaas_status: 'DELETED', status: 'pending' }).eq("asaas_id", payment.id);
-        console.log(`Pagamento ${payment.id} excluído no Asaas.`);
-      } else if (event === "PAYMENT_REFUNDED") {
-        await supabase.from("payments").update({ asaas_status: 'REFUNDED', status: 'pending' }).eq("asaas_id", payment.id);
-        console.log(`Pagamento ${payment.id} estornado.`);
-      }
       }
 
       res.status(200).send("OK");
@@ -1033,11 +1035,19 @@ export async function createApp() {
   app.post("/api/contracts/generate-payments", async (req, res) => {
     try {
       const { month, year } = req.body; // e.g., 3, 2024
+      
+      // Calculate start and end of the target month
+      const targetMonthStart = `${year}-${month.toString().padStart(2, '0')}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const targetMonthEnd = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
+
+      console.log(`[GENERATE-PAYMENTS] Gerando para o período: ${targetMonthStart} até ${targetMonthEnd}`);
+
       const { data: contracts, error } = await supabase
         .from("contracts")
         .select("*, tenants(name), properties(address)")
-        .lte("start_date", `${year}-${month.toString().padStart(2, '0')}-28`)
-        .gte("end_date", `${year}-${month.toString().padStart(2, '0')}-01`);
+        .lte("start_date", targetMonthEnd)
+        .gte("end_date", targetMonthStart);
 
       if (error) throw error;
 
@@ -1045,36 +1055,43 @@ export async function createApp() {
       const contractsList = Array.isArray(contracts) ? contracts : [];
 
       for (const contract of contractsList) {
-        const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
-        const endDate = `${year}-${month.toString().padStart(2, '0')}-31`;
-
+        // Check if payment already exists for this contract and month
         const { data: existing } = await supabase
           .from("payments")
           .select("id")
           .eq("contract_id", contract.id)
-          .gte("due_date", startDate)
-          .lte("due_date", endDate)
+          .gte("due_date", targetMonthStart)
+          .lte("due_date", targetMonthEnd)
           .limit(1);
 
         if (!existing || existing.length === 0) {
-          const dueDay = contract.due_day || 5;
+          const rawDueDay = contract.due_day || 5;
+          // Ensure due day doesn't exceed month length
+          const dueDay = Math.min(rawDueDay, lastDay);
           const dueDate = `${year}-${month.toString().padStart(2, '0')}-${dueDay.toString().padStart(2, '0')}`;
 
-          const { data: p } = await supabase.from("payments").insert([{
+          const { data: p, error: insError } = await supabase.from("payments").insert([{
             contract_id: contract.id,
-            tenant_name: contract.tenants?.name,
-            address: contract.properties?.address,
             due_date: dueDate,
-            amount_paid: 0,
             status: 'pending',
             transfer_status: 'pending'
           }]).select();
+          
+          if (insError) {
+            console.error(`Erro ao criar pagamento para contrato ${contract.id}:`, insError.message);
+            continue;
+          }
+          
           if (p) created.push(p[0]);
         }
       }
 
-      res.json({ message: `Gerados ${created.length} novos pagamentos para ${month}/${year}.`, count: created.length });
+      res.json({ 
+        message: `Gerados ${created.length} novos pagamentos para ${month}/${year}.`, 
+        count: created.length 
+      });
     } catch (e: any) {
+      console.error("[GENERATE-PAYMENTS] Erro fatal:", e.message);
       res.status(500).json({ error: e.message });
     }
   });
