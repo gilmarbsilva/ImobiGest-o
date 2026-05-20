@@ -63,6 +63,7 @@ export interface Contract {
   condo_status?: 'pending' | 'paid' | 'n/a';
   last_adjustment_date?: string;
   next_adjustment_date?: string;
+  status?: 'ativo' | 'finalizado' | 'suspenso';
 }
 
 export interface Payment {

@@ -21,6 +21,7 @@ import {
   RefreshCw,
   UserPlus,
   Trash2,
+  LogOut,
   Shield,
   ExternalLink,
   Zap,
@@ -38,7 +39,9 @@ import {
   TrendingUp,
   Wrench,
   ArrowRight,
-  Loader2
+  Loader2,
+  Menu,
+  X
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -62,18 +65,32 @@ const FinancialCard = ({ title, value, liquidValue, clients, charges, color, pro
     red: 'bg-red-400'
   };
 
+  const activeBorderColors: any = {
+    emerald: 'border-emerald-500 shadow-emerald-100 ring-emerald-500/20',
+    blue: 'border-blue-500 shadow-blue-100 ring-blue-500/20',
+    amber: 'border-amber-500 shadow-amber-100 ring-amber-500/20',
+    red: 'border-red-500 shadow-red-100 ring-red-500/20'
+  };
+
+  const activeIconColors: any = {
+    emerald: 'bg-emerald-50 text-emerald-500',
+    blue: 'bg-blue-50 text-blue-500',
+    amber: 'bg-amber-50 text-amber-500',
+    red: 'bg-red-50 text-red-500'
+  };
+
   return (
     <div 
       onClick={onClick}
       className={`p-6 rounded-[2rem] border transition-all cursor-pointer select-none active:scale-95 ${
         isActive 
-          ? `bg-white border-${color}-500 shadow-lg shadow-${color}-100 ring-2 ring-${color}-500/20` 
+          ? `bg-white shadow-lg ring-2 ${activeBorderColors[color] || 'border-slate-500 shadow-slate-100 ring-slate-500/20'}` 
           : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-slate-200'
       }`}
     >
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-slate-500 text-sm font-bold">{title}</h3>
-        <div className={`p-1.5 rounded-full ${isActive ? `bg-${color}-50 text-${color}-500` : 'bg-slate-50 text-slate-300'}`}>
+        <div className={`p-1.5 rounded-full ${isActive ? (activeIconColors[color] || 'bg-slate-50 text-slate-500') : 'bg-slate-50 text-slate-300'}`}>
           <HelpCircle size={14} />
         </div>
       </div>
@@ -181,8 +198,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [extraCharges, setExtraCharges] = useState<{ description: string, value: number, period: string }[]>([]);
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [renewingContract, setRenewingContract] = useState<Contract | null>(null);
+  const [showRenewModal, setShowRenewModal] = useState(false);
+  const [contractStatusFilter, setContractStatusFilter] = useState<'todos' | 'ativos' | 'vencidos' | 'finalizados'>('ativos');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRepasseModal, setShowRepasseModal] = useState(false);
+  const [showRepasseDetailModal, setShowRepasseDetailModal] = useState(false);
+  const [ignoreDateFilter, setIgnoreDateFilter] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [extraPayments, setExtraPayments] = useState<{ description: string, value: number }[]>([]);
@@ -207,6 +229,8 @@ export default function App() {
   const [paymentFilterStatus, setPaymentFilterStatus] = useState<string | null>(null);
   const [showFinancialFilters, setShowFinancialFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [repasseOwnerFilter, setRepasseOwnerFilter] = useState<string>('');
+  const [showSidebar, setShowSidebar] = useState(false);
 
   // Helpers de filtragem global
   const filterList = (list: any[]) => {
@@ -363,6 +387,8 @@ export default function App() {
   };
 
   const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
+    if (ignoreDateFilter) return true;
+
     // Pegamos apenas a parte da data (YYYY-MM-DD) caso venha com timestamp
     const dueDate = p.due_date?.substring(0, 10);
     const receivedDate = p.received_date?.substring(0, 10);
@@ -371,6 +397,19 @@ export default function App() {
     const isReceivedInRange = receivedDate && receivedDate >= reportStartDate && receivedDate <= reportEndDate;
 
     return isDueInRange || isReceivedInRange;
+  });
+
+  // Filtragem composta para a tabela financeira — elimina lógica duplicada
+  const displayedPayments = filteredPayments.filter(p => {
+    if (paymentFilterStatus === 'paid') return p.status === 'paid';
+    if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
+    if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
+    if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
+    return true;
+  }).filter(p => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toLowerCase();
+    return p.tenant_name?.toLowerCase().includes(s) || p.address?.toLowerCase().includes(s) || p.owner_name?.toLowerCase().includes(s);
   });
 
   const handleCreateBroker = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -626,6 +665,82 @@ export default function App() {
     }
   };
 
+  const handleRenewContract = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!renewingContract) return;
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      // 1. Create the new contract
+      const newContractPayload = {
+        property_id: renewingContract.property_id,
+        tenant_id: renewingContract.tenant_id,
+        start_date: data.start_date,
+        end_date: data.end_date,
+        rent_value: data.rent_value,
+        due_day: data.due_day,
+        admin_tax: data.admin_tax,
+        adjustment_index: data.adjustment_index,
+        guarantee_type: data.guarantee_type,
+        guarantee_value: data.guarantee_value,
+        charges: renewingContract.charges || 0,
+        transfer_value: renewingContract.transfer_value || 0,
+        water_installation: renewingContract.water_installation || '',
+        electricity_installation: renewingContract.electricity_installation || '',
+        gas_installation: renewingContract.gas_installation || '',
+        broker_id: renewingContract.broker_id || null,
+        broker_commission_percent: renewingContract.broker_commission_percent || 0,
+        agency_commission_value: renewingContract.agency_commission_value || 0,
+        iptu_status: renewingContract.iptu_status || 'pending',
+        condo_status: renewingContract.condo_status || 'pending',
+        status: 'ativo',
+        extra_charges: renewingContract.extra_charges || '[]'
+      };
+
+      const res = await fetch('/api/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newContractPayload)
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { id } = await res.json();
+
+      // Create initial payment
+      const today = new Date();
+      const dueDate = new Date(today.getFullYear(), today.getMonth(), parseInt(data.due_day as string));
+      if (dueDate < today) dueDate.setMonth(dueDate.getMonth() + 1);
+
+      await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contract_id: id,
+          due_date: dueDate.toISOString().split('T')[0],
+          status: 'pending'
+        })
+      });
+
+      // 2. Mark old contract as finished ('finalizado')
+      const updateOldRes = await fetch(`/api/contracts/${renewingContract.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...renewingContract,
+          status: 'finalizado'
+        })
+      });
+      if (!updateOldRes.ok) throw new Error(await updateOldRes.text());
+
+      showToast('Contrato renovado com sucesso!', 'success');
+      setShowRenewModal(false);
+      setRenewingContract(null);
+      fetchData();
+    } catch (e: any) {
+      showToast(`Erro ao renovar contrato: ${e.message}`, 'error');
+    }
+  };
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-';
     try {
@@ -701,6 +816,22 @@ export default function App() {
     }
   };
 
+  const handleManualTransfer = async (paymentId: number) => {
+    if (!confirm('Confirmar repasse manual para o proprietário? O status de repasse do pagamento será atualizado para concluído.')) return;
+    try {
+      await handleUpdatePayment(paymentId, { 
+        transfer_status: 'done',
+        transfer_date: new Date().toISOString().split('T')[0]
+      });
+      showToast('Repasse manual registrado com sucesso!', 'success');
+      setShowRepasseDetailModal(false);
+      setShowRepasseModal(false);
+      fetchData();
+    } catch (e) {
+      showToast('Erro ao atualizar status de repasse.', 'error');
+    }
+  };
+
   const handleAsaasTransfer = async (paymentId: number) => {
     if (!confirm('Deseja realizar o repasse para o proprietário via Asaas agora?')) return;
     try {
@@ -708,6 +839,8 @@ export default function App() {
       const data = await res.json();
       if (res.ok) {
         alert('Repasse realizado com sucesso!');
+        setShowRepasseDetailModal(false);
+        setShowRepasseModal(false);
         fetchData();
 
         // Notificação WhatsApp
@@ -867,7 +1000,7 @@ export default function App() {
 
   const SidebarItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
     <button
-      onClick={() => setActiveTab(id)}
+      onClick={() => { setActiveTab(id); setShowSidebar(false); }}
       className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === id
         ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
         : 'text-slate-500 hover:bg-slate-100'
@@ -888,16 +1021,32 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+      {/* Mobile Sidebar Overlay */}
+      {showSidebar && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col">
-        <div className="flex items-center space-x-3 mb-10 px-2">
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
-            <Home size={24} />
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 p-6 flex flex-col transform transition-transform duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="flex items-center justify-between mb-10 px-2">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-200">
+              <Home size={24} />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight">ImobiGestão</h1>
           </div>
-          <h1 className="text-xl font-bold tracking-tight">ImobiGestão</h1>
+          <button 
+            onClick={() => setShowSidebar(false)}
+            className="lg:hidden p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        <nav className="space-y-2 flex-1">
+        <nav className="space-y-2 flex-1 overflow-y-auto">
           <SidebarItem id="dashboard" icon={LayoutDashboard} label="Dashboard" />
           <SidebarItem id="owners" icon={Users} label="Proprietários" />
           <SidebarItem id="tenants" icon={UserCheck} label="Inquilinos" />
@@ -937,17 +1086,31 @@ export default function App() {
               className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
               title="Sair"
             >
-              <Trash2 size={18} />
+              <LogOut size={18} />
             </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8">
-        <header className="flex justify-between items-center mb-8">
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full">
+        <header className="flex justify-between items-center mb-8 gap-4">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight capitalize">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'manual' ? 'Manual & Ajuda' : activeTab === 'brokers' ? 'Corretores' : activeTab === 'inspections' ? 'Vistorias' : activeTab === 'maintenances' ? 'Manutenções' : activeTab}</h2>
+            <h2 className="text-3xl font-bold tracking-tight capitalize">
+              {activeTab === 'dashboard' ? 'Visão Geral' 
+                : activeTab === 'manual' ? 'Manual & Ajuda' 
+                : activeTab === 'brokers' ? 'Corretores' 
+                : activeTab === 'inspections' ? 'Vistorias' 
+                : activeTab === 'maintenances' ? 'Manutenções' 
+                : activeTab === 'owners' ? 'Proprietários'
+                : activeTab === 'tenants' ? 'Inquilinos'
+                : activeTab === 'properties' ? 'Imóveis'
+                : activeTab === 'contracts' ? 'Contratos'
+                : activeTab === 'financial' ? 'Financeiro'
+                : activeTab === 'repasse' ? 'Repasses'
+                : activeTab === 'reports' ? 'Relatórios'
+                : activeTab}
+            </h2>
             <p className="text-slate-500">Bem-vindo ao seu painel de controle imobiliário.</p>
           </div>
           <div className="flex space-x-4">
@@ -1253,6 +1416,60 @@ export default function App() {
                       </div>
                     </section>
                   </div>
+
+                  {/* Gráfico de Evolução Mensal */}
+                  {(() => {
+                    const last6Months = Array.from({ length: 6 }, (_, i) => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() - (5 - i));
+                      return { month: d.getMonth(), year: d.getFullYear(), label: d.toLocaleString('pt-BR', { month: 'short' }) };
+                    });
+                    const chartData = last6Months.map(({ month, year, label }) => {
+                      const monthPays = payments.filter(p => {
+                        const d = new Date(p.received_date || p.due_date);
+                        return d.getMonth() === month && d.getFullYear() === year;
+                      });
+                      return {
+                        name: label.charAt(0).toUpperCase() + label.slice(1),
+                        recebido: monthPays.filter(p => p.status === 'paid').reduce((a, p) => a + (p.amount_paid || 0), 0),
+                        repassado: monthPays.filter(p => p.transfer_status === 'done').reduce((a, p) => a + (p.transfer_amount || 0), 0),
+                      };
+                    });
+                    return (
+                      <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                        <div className="flex justify-between items-center mb-6">
+                          <div>
+                            <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Evolução Financeira</h3>
+                            <p className="text-xs text-slate-400 font-medium mt-0.5">Últimos 6 meses</p>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs font-bold">
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-400" />Recebido</div>
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-400" />Repassado</div>
+                          </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="colorRecebido" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                              <linearGradient id="colorRepassado" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
+                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                            <YAxis tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                            <Tooltip formatter={(v: any) => `R$ ${Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2})}`} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: 12 }} />
+                            <Area type="monotone" dataKey="recebido" stroke="#10b981" strokeWidth={2.5} fill="url(#colorRecebido)" dot={{ r: 4, fill: '#10b981', strokeWidth: 0 }} />
+                            <Area type="monotone" dataKey="repassado" stroke="#3b82f6" strokeWidth={2.5} fill="url(#colorRepassado)" dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1469,11 +1686,12 @@ export default function App() {
                               <button 
                                 onClick={() => {
                                   setSearchTerm(t.name);
+                                  setIgnoreDateFilter(true);
                                   setActiveTab('financial');
                                   setShowFinancialFilters(true);
                                 }}
                                 className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
-                                title="Ver todas as cobranças deste inquilino"
+                                title="Ver histórico completo de cobranças deste inquilino"
                               >
                                 <List size={18} />
                               </button>
@@ -1534,60 +1752,122 @@ export default function App() {
                 </div>
               )}
 
-              {activeTab === 'contracts' && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50/50 border-b border-slate-100">
-                      <tr>
-                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contrato / Imóvel</th>
-                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Inquilino</th>
-                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Financeiro</th>
-                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Vigência</th>
-                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {filterList(contracts).length === 0 ? (
-                        <tr><td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic">Nenhum contrato encontrado.</td></tr>
-                      ) : filterList(contracts).map(c => {
-                        const extras = c.extra_charges ? JSON.parse(c.extra_charges) : [];
-                        return (
-                          <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
-                            <td className="px-8 py-5">
-                              <div className="font-black text-slate-700">{c.address}</div>
-                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">ID: {c.id}</div>
-                            </td>
-                            <td className="px-8 py-5">
-                              <div className="text-sm font-bold text-slate-600">{c.tenant_name}</div>
-                            </td>
-                            <td className="px-8 py-5">
-                              <div className="font-black text-emerald-600">R$ {c.rent_value.toLocaleString('pt-BR')}</div>
-                              <div className="flex gap-1 mt-1">
-                                <div className={`w-2 h-2 rounded-full ${c.iptu_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="IPTU" />
-                                <div className={`w-2 h-2 rounded-full ${c.condo_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="Condomínio" />
-                              </div>
-                            </td>
-                            <td className="px-8 py-5">
-                              <div className="text-xs font-bold text-slate-500">{formatDate(c.start_date)} - {formatDate(c.end_date)}</div>
-                            </td>
-                            <td className="px-8 py-5">
-                              <div className="flex space-x-2">
-                                <button onClick={() => { setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
-                                <button onClick={() => handleDelete('contracts', c.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
-                                {!(c as any).asaas_subscription_id ? (
-                                  <button onClick={() => handleAsaasSubscription(c.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Criar Assinatura Asaas"><Zap size={18} /></button>
-                                ) : (
-                                  <button onClick={() => handleCheckSubscription(c.id)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Verificar Assinatura"><CheckCircle2 size={18} /></button>
-                                )}
-                              </div>
-                            </td>
+              {activeTab === 'contracts' && (() => {
+                const filteredContracts = filterList(contracts).filter(c => {
+                  const diffDays = Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000);
+                  const isExpired = diffDays <= 0;
+                  if (c.status === 'finalizado' || c.status === 'suspenso') {
+                    return contractStatusFilter === 'finalizados';
+                  }
+                  if (contractStatusFilter === 'ativos') {
+                    return !isExpired;
+                  }
+                  if (contractStatusFilter === 'vencidos') {
+                    return isExpired;
+                  }
+                  return true;
+                });
+                return (
+                  <div className="space-y-4">
+                    {/* Filtro de Status de Contratos */}
+                    <div className="flex gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm w-fit">
+                      {(['todos', 'ativos', 'vencidos', 'finalizados'] as const).map((statusFilter) => (
+                        <button
+                          key={statusFilter}
+                          onClick={() => setContractStatusFilter(statusFilter)}
+                          className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                            contractStatusFilter === statusFilter
+                              ? 'bg-slate-800 text-white'
+                              : 'text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          {statusFilter === 'todos' ? 'Todos'
+                            : statusFilter === 'ativos' ? 'Ativos'
+                            : statusFilter === 'vencidos' ? 'Vencidos'
+                            : 'Finalizados'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 border-b border-slate-100">
+                          <tr>
+                            <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contrato / Imóvel</th>
+                            <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Inquilino</th>
+                            <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Financeiro</th>
+                            <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Vigência</th>
+                            <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {filteredContracts.length === 0 ? (
+                            <tr><td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic">Nenhum contrato encontrado.</td></tr>
+                          ) : filteredContracts.map(c => {
+                            const extras = c.extra_charges ? JSON.parse(c.extra_charges) : [];
+                            return (
+                              <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
+                                <td className="px-8 py-5">
+                                  <div className="font-black text-slate-700">{c.address}</div>
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">ID: {c.id}</div>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <div className="text-sm font-bold text-slate-600">{c.tenant_name}</div>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <div className="font-black text-emerald-600">R$ {c.rent_value.toLocaleString('pt-BR')}</div>
+                                  <div className="flex gap-1 mt-1">
+                                    <div className={`w-2 h-2 rounded-full ${c.iptu_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="IPTU" />
+                                    <div className={`w-2 h-2 rounded-full ${c.condo_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="Condomínio" />
+                                  </div>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <div className="text-xs font-bold text-slate-500">{formatDate(c.start_date)} - {formatDate(c.end_date)}</div>
+                                  {(() => {
+                                    if (c.status === 'finalizado') {
+                                      return <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 mt-1"><CheckCircle2 size={9} /> FINALIZADO</span>;
+                                    }
+                                    if (c.status === 'suspenso') {
+                                      return <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 mt-1"><AlertCircle size={9} /> SUSPENSO</span>;
+                                    }
+                                    const diffDays = Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000);
+                                    return diffDays <= 0
+                                      ? <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 mt-1"><AlertCircle size={9} /> VENCIDO</span>
+                                      : diffDays <= 60
+                                      ? <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 mt-1"><Clock size={9} /> {diffDays}d restantes</span>
+                                      : <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 mt-1"><CheckCircle2 size={9} /> ATIVO</span>;
+                                  })()}
+                                </td>
+                                <td className="px-8 py-5">
+                                  <div className="flex space-x-2">
+                                    <button onClick={() => { setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Editar Contrato"><Settings size={18} /></button>
+                                    <button onClick={() => handleDelete('contracts', c.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir Contrato"><Trash2 size={18} /></button>
+                                    <button
+                                      onClick={() => {
+                                        setRenewingContract(c);
+                                        setShowRenewModal(true);
+                                      }}
+                                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                                      title="Renovar Contrato"
+                                    >
+                                      <RefreshCw size={18} />
+                                    </button>
+                                    {!(c as any).asaas_subscription_id ? (
+                                      <button onClick={() => handleAsaasSubscription(c.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Criar Assinatura Asaas"><Zap size={18} /></button>
+                                    ) : (
+                                      <button onClick={() => handleCheckSubscription(c.id)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Verificar Assinatura"><CheckCircle2 size={18} /></button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {activeTab === 'financial' && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1648,7 +1928,8 @@ export default function App() {
                               type="date"
                               value={reportStartDate}
                               onChange={(e) => setReportStartDate(e.target.value)}
-                              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                              disabled={ignoreDateFilter}
+                              className={`px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium ${ignoreDateFilter ? 'opacity-50 cursor-not-allowed' : ''}`}
                             />
                           </div>
                           <div className="space-y-2">
@@ -1657,11 +1938,24 @@ export default function App() {
                               type="date"
                               value={reportEndDate}
                               onChange={(e) => setReportEndDate(e.target.value)}
-                              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                              disabled={ignoreDateFilter}
+                              className={`px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium ${ignoreDateFilter ? 'opacity-50 cursor-not-allowed' : ''}`}
                             />
                           </div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <input 
+                              type="checkbox"
+                              id="ignoreDateFilter"
+                              checked={ignoreDateFilter}
+                              onChange={(e) => setIgnoreDateFilter(e.target.checked)}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                            />
+                            <label htmlFor="ignoreDateFilter" className="text-xs font-bold text-slate-500 cursor-pointer select-none">
+                              Ignorar período (Histórico Completo)
+                            </label>
+                          </div>
                           <button 
-                            onClick={() => { setSearchTerm(''); setPaymentFilterStatus(null); }}
+                            onClick={() => { setSearchTerm(''); setPaymentFilterStatus(null); setIgnoreDateFilter(false); }}
                             className="px-4 py-2 text-rose-500 font-bold text-sm hover:bg-rose-50 rounded-xl transition-colors"
                           >
                             Limpar
@@ -1753,36 +2047,14 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {filteredPayments.filter(p => {
-                            // Filtro por Status do Card
-                            if (paymentFilterStatus === 'paid') return p.status === 'paid';
-                            if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
-                            if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
-                            if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
-                            return true;
-                          }).filter(p => {
-                            // Filtro de Busca
-                            if (!searchTerm) return true;
-                            const search = searchTerm.toLowerCase();
-                            return p.tenant_name?.toLowerCase().includes(search) || p.address?.toLowerCase().includes(search);
-                          }).length === 0 ? (
+                          {displayedPayments.length === 0 ? (
                             <tr>
                               <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">
                                 Nenhuma fatura encontrada com estes filtros.
                               </td>
                             </tr>
                           ) : (
-                            filteredPayments.filter(p => {
-                              if (paymentFilterStatus === 'paid') return p.status === 'paid';
-                              if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
-                              if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
-                              if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
-                              return true;
-                            }).filter(p => {
-                              if (!searchTerm) return true;
-                              const search = searchTerm.toLowerCase();
-                              return p.tenant_name?.toLowerCase().includes(search) || p.address?.toLowerCase().includes(search);
-                            }).map(p => (
+                            displayedPayments.map(p => (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors group">
                                 <td className="px-6 py-4">
                                   <div className="font-bold text-slate-700">{p.tenant_name}</div>
@@ -1849,10 +2121,26 @@ export default function App() {
 
               {activeTab === 'repasse' && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center flex-wrap gap-4">
                     <div>
                       <h2 className="text-3xl font-black text-slate-800 tracking-tight">Gestão de Repasses</h2>
                       <p className="text-slate-500 font-medium">Controle de pagamentos aos proprietários</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Filtrar por Proprietário</label>
+                      <select
+                        value={repasseOwnerFilter}
+                        onChange={(e) => setRepasseOwnerFilter(e.target.value)}
+                        className="px-4 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium text-sm"
+                      >
+                        <option value="">Todos os proprietários</option>
+                        {owners.map(o => (
+                          <option key={o.id} value={String(o.id)}>{o.name}</option>
+                        ))}
+                      </select>
+                      {repasseOwnerFilter && (
+                        <button onClick={() => setRepasseOwnerFilter('')} className="text-xs text-rose-500 font-bold hover:text-rose-600">Limpar</button>
+                      )}
                     </div>
                   </div>
 
@@ -1869,7 +2157,12 @@ export default function App() {
                             <p className="text-slate-400 font-bold">Nenhum repasse pendente!</p>
                           </div>
                         ) : (
-                          payments.filter(p => p.status === 'paid' && p.transfer_status !== 'done').map(p => (
+                          payments.filter(p => {
+                            if (p.status !== 'paid' || p.transfer_status === 'done') return false;
+                            if (!repasseOwnerFilter) return true;
+                            const prop = properties.find(pr => pr.id === contracts.find(c => c.id === p.contract_id)?.property_id);
+                            return prop && String(prop.owner_id) === repasseOwnerFilter;
+                          }).map(p => (
                             <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group hover:border-blue-200 transition-all">
                               <div>
                                 <p className="font-black text-slate-700">{p.owner_name || 'Proprietário'}</p>
@@ -1881,7 +2174,7 @@ export default function App() {
                               <div className="text-right">
                                 <p className="font-black text-blue-600">R$ {(p.transfer_amount || 0).toLocaleString('pt-BR')}</p>
                                 <button 
-                                  onClick={() => { setSelectedPayment(p); setShowRepasseModal(true); }}
+                                  onClick={() => { setSelectedPayment(p); setShowRepasseDetailModal(true); }}
                                   className="mt-2 text-[10px] font-black text-white bg-blue-500 px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-all shadow-sm shadow-blue-100"
                                 >
                                   REALIZAR REPASSE
@@ -1899,12 +2192,22 @@ export default function App() {
                         Últimos Repasses Realizados
                       </h3>
                       <div className="space-y-4">
-                        {payments.filter(p => p.transfer_status === 'done').length === 0 ? (
+                        {payments.filter(p => {
+                            if (p.transfer_status !== 'done') return false;
+                            if (!repasseOwnerFilter) return true;
+                            const prop = properties.find(pr => pr.id === contracts.find(c => c.id === p.contract_id)?.property_id);
+                            return prop && String(prop.owner_id) === repasseOwnerFilter;
+                          }).length === 0 ? (
                           <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                             <p className="text-slate-400 font-bold italic">Nenhum histórico encontrado.</p>
                           </div>
                         ) : (
-                          payments.filter(p => p.transfer_status === 'done').slice(0, 5).map(p => (
+                          payments.filter(p => {
+                            if (p.transfer_status !== 'done') return false;
+                            if (!repasseOwnerFilter) return true;
+                            const prop = properties.find(pr => pr.id === contracts.find(c => c.id === p.contract_id)?.property_id);
+                            return prop && String(prop.owner_id) === repasseOwnerFilter;
+                          }).slice(0, 5).map(p => (
                             <div key={p.id} className="p-4 bg-emerald-50/30 rounded-2xl border border-emerald-100/50 flex justify-between items-center">
                               <div>
                                 <p className="font-black text-slate-700">{p.owner_name || 'Proprietário'}</p>
@@ -2159,6 +2462,89 @@ export default function App() {
                               )}
                             </tbody>
                           </table>
+                        </div>
+                      </section>
+
+                      {/* Relatório por Proprietário */}
+                      <section id="report-owner-section" className="space-y-6">
+                        <div className="flex justify-between items-center border-l-4 border-blue-500 pl-4 py-1">
+                          <h4 className="text-lg font-bold text-slate-800">Extrato por Proprietário</h4>
+                          <button
+                            onClick={() => handlePrint('all')}
+                            className="text-slate-400 hover:text-blue-600 print:hidden transition-colors"
+                            title="Imprimir Extrato de Proprietários"
+                          >
+                            <Printer size={16} />
+                          </button>
+                        </div>
+                        <div className="space-y-4">
+                          {owners.map(owner => {
+                            const ownerProps = properties.filter(p => p.owner_id === owner.id);
+                            const ownerContracts = contracts.filter(c => ownerProps.some(p => p.id === c.property_id));
+                            const ownerPayments = filteredPayments.filter(pay => ownerContracts.some(c => c.id === pay.contract_id));
+                            const totalReceived = ownerPayments.filter(p => p.status === 'paid').reduce((a, p) => a + (p.amount_paid || 0), 0);
+                            const totalTransferred = ownerPayments.filter(p => p.transfer_status === 'done').reduce((a, p) => a + (p.transfer_amount || 0), 0);
+                            const pendingTransfer = ownerPayments.filter(p => p.status === 'paid' && p.transfer_status !== 'done').reduce((a, p) => a + (p.transfer_amount || 0), 0);
+                            if (ownerContracts.length === 0) return null;
+                            return (
+                              <div key={owner.id} className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
+                                <div className="flex justify-between items-center px-6 py-4 bg-white border-b border-slate-100">
+                                  <div>
+                                    <p className="font-black text-slate-800">{owner.name}</p>
+                                    <p className="text-xs text-slate-400">{ownerProps.length} imóvel(is) · {ownerContracts.length} contrato(s)</p>
+                                  </div>
+                                  <div className="flex gap-6 text-right">
+                                    <div>
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase">Recebido</p>
+                                      <p className="font-black text-emerald-600">R$ {totalReceived.toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase">Repassado</p>
+                                      <p className="font-black text-blue-600">R$ {totalTransferred.toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                                    </div>
+                                    {pendingTransfer > 0 && (
+                                      <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">A Repassar</p>
+                                        <p className="font-black text-amber-600">R$ {pendingTransfer.toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-left">
+                                      <th className="px-6 py-2 font-bold text-slate-400 uppercase">Imóvel</th>
+                                      <th className="px-6 py-2 font-bold text-slate-400 uppercase">Vencimento</th>
+                                      <th className="px-6 py-2 font-bold text-slate-400 uppercase">Pago em</th>
+                                      <th className="px-6 py-2 font-bold text-slate-400 uppercase">Valor</th>
+                                      <th className="px-6 py-2 font-bold text-slate-400 uppercase">Repasse</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {ownerPayments.map(p => (
+                                      <tr key={p.id} className="hover:bg-white transition-colors">
+                                        <td className="px-6 py-2 font-medium text-slate-600 truncate max-w-[200px]">{p.address || '-'}</td>
+                                        <td className="px-6 py-2 text-slate-500">{formatDate(p.due_date)}</td>
+                                        <td className="px-6 py-2 text-slate-500">{p.received_date ? formatDate(p.received_date) : '-'}</td>
+                                        <td className="px-6 py-2 font-bold text-slate-700">R$ {(p.amount_paid || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                                        <td className="px-6 py-2">
+                                          <span className={`px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                            p.transfer_status === 'done' ? 'bg-blue-100 text-blue-700' :
+                                            p.status === 'paid' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                                          }`}>
+                                            {p.transfer_status === 'done' ? 'Enviado' : p.status === 'paid' ? 'Pendente' : 'Aguardando'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                    {ownerPayments.length === 0 && (
+                                      <tr><td colSpan={5} className="px-6 py-4 text-center text-slate-400 italic">Nenhum lançamento no período.</td></tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            );
+                          })}
                         </div>
                       </section>
 
@@ -2473,7 +2859,7 @@ export default function App() {
                     <FileUpload onUpload={(url) => setUploadedUrl(url)} label="Contrato PDF" />
                     <Input label="Link do Contrato Digital" name="document_links" defaultValue={uploadedUrl || editingItem?.document_links} placeholder="Google Drive ou Upload acima" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-1">
                       <label className="text-sm font-medium text-slate-700">Status IPTU</label>
                       <select name="iptu_status" defaultValue={editingItem?.iptu_status || 'pending'} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none">
@@ -2488,6 +2874,14 @@ export default function App() {
                         <option value="pending">Pendente</option>
                         <option value="paid">Pago</option>
                         <option value="n/a">N/A</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-slate-700">Status Contrato</label>
+                      <select name="status" defaultValue={editingItem?.status || 'ativo'} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none">
+                        <option value="ativo">Ativo</option>
+                        <option value="finalizado">Finalizado</option>
+                        <option value="suspenso">Suspenso</option>
                       </select>
                     </div>
                   </div>
@@ -2712,6 +3106,126 @@ export default function App() {
 
               <button type="submit" className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 mt-4">
                 {editingItem ? 'Atualizar' : 'Salvar'} Registro
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Renewal Modal */}
+      {showRenewModal && renewingContract && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold">Renovar Contrato</h3>
+              <button onClick={() => { setShowRenewModal(false); setRenewingContract(null); }} className="text-slate-400 hover:text-slate-600">
+                <Plus className="rotate-45" size={24} />
+              </button>
+            </div>
+
+            <div className="mb-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Imóvel</div>
+              <div className="font-bold text-slate-700">{renewingContract.address}</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-3 mb-1">Inquilino</div>
+              <div className="font-bold text-slate-700">{renewingContract.tenant_name}</div>
+            </div>
+
+            <form onSubmit={handleRenewContract} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Input 
+                  label="Data Início Nova" 
+                  name="start_date" 
+                  type="date" 
+                  defaultValue={
+                    renewingContract.end_date 
+                      ? (() => {
+                          const oldEnd = new Date(renewingContract.end_date);
+                          oldEnd.setDate(oldEnd.getDate() + 1);
+                          return oldEnd.toISOString().split('T')[0];
+                        })()
+                      : new Date().toISOString().split('T')[0]
+                  } 
+                  required 
+                />
+                <Input 
+                  label="Data Fim Nova" 
+                  name="end_date" 
+                  type="date" 
+                  defaultValue={
+                    renewingContract.end_date 
+                      ? (() => {
+                          const oldEnd = new Date(renewingContract.end_date);
+                          oldEnd.setFullYear(oldEnd.getFullYear() + 1); // Default to +1 year
+                          return oldEnd.toISOString().split('T')[0];
+                        })()
+                      : new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+                  } 
+                  required 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Input 
+                  label="Novo Valor Aluguel" 
+                  name="rent_value" 
+                  type="number" 
+                  step="0.01" 
+                  defaultValue={renewingContract.rent_value} 
+                  required 
+                />
+                <Input 
+                  label="Dia Vencimento" 
+                  name="due_day" 
+                  type="number" 
+                  min="1" 
+                  max="31" 
+                  defaultValue={renewingContract.due_day} 
+                  required 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Input 
+                  label="Taxa Adm (%)" 
+                  name="admin_tax" 
+                  type="number" 
+                  step="0.1" 
+                  defaultValue={renewingContract.fees} 
+                  required 
+                />
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">Índice Reajuste</label>
+                  <select name="adjustment_index" defaultValue={renewingContract.adjustment_index || 'IGPM'} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" required>
+                    <option value="IGPM">IGPM</option>
+                    <option value="IPCA">IPCA</option>
+                    <option value="INPC">INPC</option>
+                    <option value="FIPE">FIPE</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">Tipo de Garantia</label>
+                  <select name="guarantee_type" defaultValue={renewingContract.guarantee_type || 'Depósito'} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none">
+                    <option value="Depósito">Depósito</option>
+                    <option value="Seguro Fiança">Seguro Fiança</option>
+                    <option value="Fiador">Fiador</option>
+                    <option value="Título de Capitalização">Título de Capitalização</option>
+                    <option value="Cartão de Crédito">Cartão de Crédito</option>
+                    <option value="Sem Garantia">Sem Garantia</option>
+                  </select>
+                </div>
+                <Input label="Valor da Garantia" name="guarantee_value" type="number" step="0.01" defaultValue={renewingContract.guarantee_value || 0} />
+              </div>
+
+              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 mt-4">
+                Confirmar Renovação
               </button>
             </form>
           </motion.div>
@@ -2955,12 +3469,8 @@ export default function App() {
                         <td className="px-6 py-4 font-bold text-blue-600">R$ {p.transfer_amount?.toLocaleString('pt-BR')}</td>
                         <td className="px-6 py-4">
                           <button
-                            onClick={() => handleAsaasTransfer(p.id)}
-                            disabled={!owner?.bank_code}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-bold transition-all ${owner?.bank_code
-                              ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-100'
-                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                              }`}
+                            onClick={() => { setSelectedPayment(p); setShowRepasseDetailModal(true); }}
+                            className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-100 rounded-xl font-bold transition-all"
                           >
                             <Zap size={16} />
                             <span>Repassar</span>
@@ -2982,6 +3492,116 @@ export default function App() {
           </motion.div>
         </div>
       )}
+
+      {showRepasseDetailModal && selectedPayment && (() => {
+        const contract = contracts.find(c => c.id === selectedPayment.contract_id);
+        const property = properties.find(prop => prop.id === contract?.property_id);
+        const owner = owners.find(o => o.id === property?.owner_id);
+        if (!contract) return null;
+
+        const rent = contract.rent_value;
+        const adminTax = contract.admin_tax || 0;
+        const charges = contract.charges || 0;
+        const extras = selectedPayment.extra_payments ? JSON.parse(selectedPayment.extra_payments).reduce((acc: number, curr: any) => acc + (curr.value || 0), 0) : 0;
+        const debts = selectedPayment.debts_value || 0;
+        const adminValue = (rent * adminTax) / 100;
+        const netSuggested = rent - adminValue + charges + extras - debts;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl overflow-y-auto"
+            >
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-md uppercase">Ref: {formatDate(selectedPayment.due_date)}</span>
+                  <h3 className="text-2xl font-black text-slate-800 mt-2">Detalhamento do Repasse</h3>
+                  <p className="text-slate-500 text-sm">{property?.address || '-'}</p>
+                </div>
+                <button onClick={() => setShowRepasseDetailModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              {/* Informações do Proprietário */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Proprietário</h4>
+                <p className="font-bold text-slate-700">{owner?.name || 'Não cadastrado'}</p>
+                {owner?.bank_code ? (
+                  <div className="text-xs text-slate-500 mt-1 space-y-0.5">
+                    <p><strong>Banco:</strong> {owner.bank_code} ({owner.bank_name || ''})</p>
+                    <p><strong>Agência/Conta:</strong> {owner.bank_agency} / {owner.bank_account}</p>
+                    {owner.pix_key && <p><strong>Chave PIX:</strong> {owner.pix_key}</p>}
+                  </div>
+                ) : (
+                  <p className="text-xs text-red-500 font-bold mt-1">⚠️ Dados bancários ausentes para repasse automático.</p>
+                )}
+              </div>
+
+              {/* Cálculo do Repasse */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6 space-y-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cálculo Financeiro</h4>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Aluguel:</span>
+                    <span className="font-bold text-slate-700">R$ {rent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Taxa Adm ({adminTax}%):</span>
+                    <span className="font-bold text-rose-500">- R$ {adminValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  {charges > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-medium">Encargos:</span>
+                      <span className="font-bold text-slate-700">R$ {charges.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {extras > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-medium">Adicionais:</span>
+                      <span className="font-bold text-slate-700">R$ {extras.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {debts > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-medium">Deduções/Débitos:</span>
+                      <span className="font-bold text-rose-500">- R$ {debts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  <div className="pt-2 border-t border-slate-200 flex justify-between font-black text-emerald-600 text-base">
+                    <span>Valor Líquido:</span>
+                    <span>R$ {netSuggested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="space-y-3">
+                <button
+                  onClick={() => handleAsaasTransfer(selectedPayment.id)}
+                  disabled={!owner?.bank_code}
+                  className={`w-full py-3.5 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${owner?.bank_code
+                    ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-100'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Zap size={18} />
+                  <span>Repassar Automático (Asaas)</span>
+                </button>
+                <button
+                  onClick={() => handleManualTransfer(selectedPayment.id)}
+                  className="w-full py-3.5 rounded-xl font-bold border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center space-x-2"
+                >
+                  <CheckCircle2 size={18} className="text-emerald-500" />
+                  <span>Confirmar Repasse Manual</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        );
+      })()}
 
       {showImportModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

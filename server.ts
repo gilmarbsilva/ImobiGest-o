@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -36,8 +37,13 @@ const supabase = {
   }
 };
 
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin@sistema.com";
+let ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+if (!ADMIN_PASSWORD) {
+  ADMIN_PASSWORD = crypto.randomBytes(16).toString("hex");
+  console.warn(`\n[SECURITY WARNING] ADMIN_PASSWORD não configurada no ambiente. Usando senha gerada aleatoriamente: ${ADMIN_PASSWORD}`);
+}
 
 // Auth Middleware for other API routes
 const authMiddleware = async (req: any, res: any, next: any) => {
@@ -76,8 +82,8 @@ export async function createApp() {
   // Seed default admin user if not exists
   const seedAdmin = async () => {
     try {
-      const targetAdmin = process.env.ADMIN_USERNAME || "admin@sistema.com";
-      const targetPass = process.env.ADMIN_PASSWORD || "admin123";
+      const targetAdmin = ADMIN_USERNAME;
+      const targetPass = ADMIN_PASSWORD;
 
       console.log(`[SEED] Verificando admin: ${targetAdmin}`);
       
@@ -128,9 +134,10 @@ export async function createApp() {
 
   // Session configuration optimized for Vercel Serverless
   app.set('trust proxy', 1); // trust first proxy
+  const sessionSecret = process.env.SESSION_SECRET_KEY || 'default-fallback-sec-key-imobigestao-1357';
   app.use(cookieSession({
     name: 'imobi_session',
-    keys: ['imobi-gestao-secret-key-1', 'imobi-gestao-secret-key-2'],
+    keys: [sessionSecret],
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     secure: process.env.NODE_ENV === 'production', // Only secure in production
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
@@ -147,7 +154,35 @@ export async function createApp() {
       if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
 
       const file = req.file;
-      const fileExt = path.extname(file.originalname);
+
+      // Limite de tamanho: 10MB
+      if (file.size > 10 * 1024 * 1024) {
+        return res.status(400).json({ error: "O arquivo excede o limite de tamanho permitido de 10MB." });
+      }
+
+      // Extensões permitidas
+      const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx', '.xls', '.xlsx', '.txt'];
+      const fileExt = path.extname(file.originalname).toLowerCase();
+      if (!allowedExtensions.includes(fileExt)) {
+        return res.status(400).json({ error: "Extensão de arquivo não permitida. Use PDF, PNG, JPG, DOC/DOCX, XLS/XLSX ou TXT." });
+      }
+
+      // Tipos MIME permitidos
+      const allowedMimeTypes = [
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/jpg',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain'
+      ];
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        return res.status(400).json({ error: "Tipo de arquivo inválido." });
+      }
+
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
       const filePath = `documents/${fileName}`;
 
@@ -682,6 +717,15 @@ export async function createApp() {
   // Webhook Asaas para Conciliação Automática e Gestão de Ciclo de Vida
   app.post("/api/asaas/webhook", express.json(), async (req, res) => {
     try {
+      const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
+      if (webhookToken) {
+        const headerToken = req.headers['asaas-access-token'];
+        if (headerToken !== webhookToken) {
+          console.warn(`[WEBHOOK] Acesso não autorizado do webhook Asaas. Token incorreto.`);
+          return res.status(401).send("Unauthorized");
+        }
+      }
+
       const { event, payment, subscription } = req.body;
       console.log(`Webhook Asaas: Evento ${event} recebido.`);
 
@@ -1167,7 +1211,8 @@ export async function createApp() {
       guarantee_type, guarantee_value, guarantee_payment_date, guarantee_return_date,
       water_installation, electricity_installation, gas_installation,
       broker_id, broker_commission_percent, agency_commission_value,
-      document_links, iptu_status, condo_status, last_adjustment_date, next_adjustment_date
+      document_links, iptu_status, condo_status, last_adjustment_date, next_adjustment_date,
+      status
     } = req.body;
 
     const { data, error } = await supabase.from("contracts").insert([{
@@ -1179,6 +1224,7 @@ export async function createApp() {
       due_day: Number(due_day),
       adjustment_index,
       admin_tax: Number(admin_tax),
+      fees: Number(admin_tax), // Sincroniza fees com admin_tax
       charges: Number(charges) || 0,
       extra_charges,
       transfer_value: Number(transfer_value) || 0,
@@ -1196,7 +1242,8 @@ export async function createApp() {
       iptu_status: iptu_status || 'pending',
       condo_status: condo_status || 'pending',
       last_adjustment_date: last_adjustment_date || null,
-      next_adjustment_date: next_adjustment_date || null
+      next_adjustment_date: next_adjustment_date || null,
+      status: status || 'ativo'
     }]).select();
 
     if (error) return res.status(500).json({ error: error.message });
@@ -1211,7 +1258,8 @@ export async function createApp() {
       guarantee_type, guarantee_value, guarantee_payment_date, guarantee_return_date,
       water_installation, electricity_installation, gas_installation,
       broker_id, broker_commission_percent, agency_commission_value,
-      document_links, iptu_status, condo_status, last_adjustment_date, next_adjustment_date
+      document_links, iptu_status, condo_status, last_adjustment_date, next_adjustment_date,
+      status
     } = req.body;
 
     const { error } = await supabase.from("contracts").update({
@@ -1223,6 +1271,7 @@ export async function createApp() {
       due_day: Number(due_day),
       adjustment_index,
       admin_tax: Number(admin_tax),
+      fees: Number(admin_tax), // Sincroniza fees com admin_tax
       charges: Number(charges),
       extra_charges,
       transfer_value: Number(transfer_value),
@@ -1240,7 +1289,8 @@ export async function createApp() {
       iptu_status,
       condo_status,
       last_adjustment_date: last_adjustment_date || null,
-      next_adjustment_date: next_adjustment_date || null
+      next_adjustment_date: next_adjustment_date || null,
+      status
     }).eq("id", id);
 
     if (error) return res.status(500).json({ error: error.message });
@@ -1251,14 +1301,15 @@ export async function createApp() {
   app.get("/api/payments", async (req, res) => {
     const { data, error } = await supabase
       .from("payments")
-      .select("*, contracts(tenants(name), properties(address))");
+      .select("*, contracts(tenants(name), properties(address, owners(name)))");
 
     if (error) return res.status(500).json({ error: error.message });
 
     const formatted = data.map(p => ({
       ...p,
       tenant_name: p.contracts?.tenants?.name,
-      address: p.contracts?.properties?.address
+      address: p.contracts?.properties?.address,
+      owner_name: p.contracts?.properties?.owners?.name
     }));
     res.json(formatted);
   });
@@ -1272,7 +1323,17 @@ export async function createApp() {
 
   app.patch("/api/payments/:id", async (req, res) => {
     const { id } = req.params;
-    const updates = req.body;
+    const allowedFields = [
+      'status', 'received_date', 'payment_method', 'amount_paid', 
+      'transfer_date', 'transfer_amount', 'transfer_status', 'extra_payments', 
+      'broker_transfer_status', 'broker_transfer_date', 'broker_transfer_id', 'debts_value'
+    ];
+    const updates: any = {};
+    for (const key of Object.keys(req.body)) {
+      if (allowedFields.includes(key)) {
+        updates[key] = req.body[key];
+      }
+    }
     const { error } = await supabase.from("payments").update(updates).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
@@ -1297,16 +1358,88 @@ export async function createApp() {
     }
   }
 
+  // Backup Endpoint
+  const handleBackup = async (req: any, res: any) => {
+    try {
+      const tables = ['users', 'brokers', 'owners', 'tenants', 'properties', 'property_owners', 'contracts', 'payments', 'inspections', 'maintenances'];
+      const backupData: any = {};
+      
+      for (const table of tables) {
+        const { data, error } = await supabase.from(table).select("*");
+        if (error) {
+          console.error(`Erro ao fazer backup da tabela ${table}:`, error.message);
+          backupData[table] = [];
+        } else {
+          backupData[table] = data || [];
+        }
+      }
+      
+      const jsonContent = JSON.stringify(backupData, null, 2);
+      const filename = `imobigestao-backup-${new Date().toISOString().split('T')[0]}.json`;
+      
+      res.setHeader('Content-disposition', `attachment; filename=${filename}`);
+      res.setHeader('Content-type', 'application/json');
+      res.send(jsonContent);
+    } catch (e: any) {
+      res.status(500).json({ error: `Erro ao gerar backup: ${e.message}` });
+    }
+  };
+
+  app.get("/api/backup", handleBackup);
+  app.get("/api/backup/download", handleBackup);
+
+  const ALLOWED_COLUMNS: Record<string, string[]> = {
+    brokers: ['name', 'email', 'phone', 'document', 'pix_key'],
+    owners: ['name', 'email', 'phone', 'document', 'bank_code', 'bank_agency', 'bank_account', 'bank_account_digit', 'bank_account_type', 'pix_key'],
+    tenants: ['name', 'email', 'phone', 'document', 'asaas_id', 'history'],
+    properties: ['address', 'type', 'size', 'rooms', 'bathrooms', 'garage_spaces', 'pets_allowed', 'usage_type', 'owner_id', 'document_links'],
+    property_owners: ['property_id', 'owner_id', 'share_percent'],
+    contracts: [
+      'property_id', 'tenant_id', 'start_date', 'end_date', 'rent_value', 'due_day', 
+      'fees', 'charges', 'extra_charges', 'transfer_value', 'adjustment_index', 
+      'guarantee_type', 'guarantee_value', 'guarantee_payment_date', 'guarantee_return_date', 
+      'water_installation', 'electricity_installation', 'gas_installation', 
+      'broker_id', 'broker_commission_percent', 'agency_commission_value', 
+      'document_links', 'iptu_status', 'condo_status', 'last_adjustment_date', 
+      'next_adjustment_date', 'admin_tax', 'status', 'asaas_subscription_id'
+    ],
+    payments: [
+      'contract_id', 'due_date', 'received_date', 'payment_method', 'amount_paid', 
+      'transfer_date', 'transfer_amount', 'status', 'asaas_id', 'asaas_status', 
+      'commission_value', 'transfer_status', 'extra_payments', 'broker_commission_value', 
+      'broker_transfer_status', 'broker_transfer_date', 'broker_transfer_id', 'debts_value'
+    ],
+    inspections: ['contract_id', 'type', 'date', 'description', 'photos_link', 'status'],
+    maintenances: ['property_id', 'description', 'request_date', 'estimated_cost', 'actual_cost', 'status', 'paid_by', 'photos_link']
+  };
+
   app.post("/api/import/:type", express.json(), async (req, res) => {
     const { type } = req.params;
     const items = req.body;
+    const allowedTypes = Object.keys(ALLOWED_COLUMNS);
 
-    if (!Array.isArray(items)) return res.status(400).json({ error: "Data must be an array" });
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({ error: "Tabela de importação inválida." });
+    }
+
+    if (!Array.isArray(items)) return res.status(400).json({ error: "Os dados enviados devem ser uma lista (array)." });
+
+    // Sanitize items
+    const allowedFields = ALLOWED_COLUMNS[type];
+    const sanitizedItems = items.map((item: any) => {
+      const sanitized: any = {};
+      for (const field of allowedFields) {
+        if (item[field] !== undefined) {
+          sanitized[field] = item[field];
+        }
+      }
+      return sanitized;
+    });
 
     try {
-      const { error } = await supabase.from(type).insert(items);
+      const { error } = await supabase.from(type).insert(sanitizedItems);
       if (error) throw error;
-      res.json({ success: true, count: items.length });
+      res.json({ success: true, count: sanitizedItems.length });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1344,9 +1477,6 @@ export async function createApp() {
       res.status(500).json({ error: e.message });
     }
   });
-
-  // Trigger seeding immediately
-  seedAdmin().catch(e => console.error("[SEED] Erro passivo:", e.message));
 
   return app;
 }
