@@ -1002,7 +1002,13 @@ export default function App() {
   };
 
   const SidebarItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
-    // existing code unchanged
+    <button
+      onClick={() => { setActiveTab(id); setShowSidebar(false); }}
+      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === id ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-500 hover:bg-slate-100'}`}
+    >
+      <Icon size={20} />
+      <span className="font-medium">{label}</span>
+    </button>
   );
 
   // Mobile navigation component for small screens
@@ -1020,17 +1026,6 @@ export default function App() {
         </button>
       ))}
     </nav>
-  );
-    <button
-      onClick={() => { setActiveTab(id); setShowSidebar(false); }}
-      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === id
-        ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
-        : 'text-slate-500 hover:bg-slate-100'
-        }`}
-    >
-      <Icon size={20} />
-      <span className="font-medium">{label}</span>
-    </button>
   );
 
   if (!authChecked) return (
