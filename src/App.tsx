@@ -45,7 +45,10 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { motion, AnimatePresence } from 'motion/react';
+import {
+  // existing imports...
+  // Add MobileNav component later
+ motion, AnimatePresence } from 'motion/react';
 import { Owner, Tenant, Property, Contract, Payment, Broker, Inspection, Maintenance } from './types';
 import Auth from './Auth';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -999,6 +1002,25 @@ export default function App() {
   };
 
   const SidebarItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
+    // existing code unchanged
+  );
+
+  // Mobile navigation component for small screens
+  const MobileNav = () => (
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 lg:hidden">
+      {[{id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard'},
+        {id: 'owners', icon: Users, label: 'Proprietários'},
+        {id: 'tenants', icon: UserCheck, label: 'Inquilinos'},
+        {id: 'properties', icon: Home, label: 'Imóveis'},
+        {id: 'contracts', icon: FileText, label: 'Contratos'},
+        {id: 'financial', icon: DollarSign, label: 'Financeiro'}].map(item => (
+        <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center text-xs ${activeTab === item.id ? 'text-emerald-500' : 'text-slate-500'}`}>
+          <item.icon size={20} />
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
     <button
       onClick={() => { setActiveTab(id); setShowSidebar(false); }}
       className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === id
@@ -1274,25 +1296,74 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Card Pagos */}
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                       <div className="flex justify-between items-start mb-4">
-                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Ocupação Atual</h3>
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Pagos</h3>
                         <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl">
-                          <Home size={20} />
+                          <CheckCircle2 size={20} />
                         </div>
                       </div>
                       <div className="flex items-end gap-2 mb-4">
-                        <span className="text-4xl font-black text-slate-800">{contracts.length}</span>
-                        <span className="text-slate-400 font-bold mb-1">/ {properties.length} imóveis</span>
+                        <span className="text-4xl font-black text-slate-800">
+                          {payments.filter(p => p.status === 'paid').length}
+                        </span>
+                        <span className="text-slate-400 font-bold mb-1">pagamentos</span>
                       </div>
                       <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
-                          animate={{ width: `${(contracts.length / (properties.length || 1)) * 100}%` }}
+                          animate={{ width: `${(payments.filter(p => p.status === 'paid').length / (payments.length || 1)) * 100}%` }}
                           className="bg-emerald-500 h-full"
                         />
                       </div>
                     </div>
+
+                       {/* Card Vencidos */}
+                       <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                         <div className="flex justify-between items-start mb-4">
+                           <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Vencidos</h3>
+                           <div className="p-2 bg-red-50 text-red-500 rounded-xl">
+                             <AlertCircle size={20} />
+                           </div>
+                         </div>
+                         <div className="flex items-end gap-2 mb-4">
+                           <span className="text-4xl font-black text-slate-800">
+                             {payments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).length}
+                           </span>
+                           <span className="text-slate-400 font-bold mb-1">pagamentos</span>
+                         </div>
+                         <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                           <motion.div
+                             initial={{ width: 0 }}
+                             animate={{ width: `${(payments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).length / (payments.length || 1)) * 100}%` }}
+                             className="bg-red-500 h-full"
+                           />
+                         </div>
+                       </div>
+
+                       {/* Card A Vencer */}
+                       <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                         <div className="flex justify-between items-start mb-4">
+                           <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">A Vencer</h3>
+                           <div className="p-2 bg-amber-50 text-amber-500 rounded-xl">
+                             <Clock size={20} />
+                           </div>
+                         </div>
+                         <div className="flex items-end gap-2 mb-4">
+                           <span className="text-4xl font-black text-slate-800">
+                             {payments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).length}
+                           </span>
+                           <span className="text-slate-400 font-bold mb-1">pagamentos</span>
+                         </div>
+                         <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                           <motion.div
+                             initial={{ width: 0 }}
+                             animate={{ width: `${(payments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).length / (payments.length || 1)) * 100}%` }}
+                             className="bg-amber-500 h-full"
+                           />
+                         </div>
+                       </div>
 
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                       <div className="flex justify-between items-start mb-4">
@@ -2624,7 +2695,9 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
         )}
-      </main>
+            </main>
+      {/* Mobile navigation */}
+      <MobileNav />
 
       {/* Toast Notification */}
       {toast && (
