@@ -19,6 +19,7 @@ export interface Property {
   id: number;
   identification?: string;
   address: string;
+  address_complement?: string;
   type: string;
   size: number;
   rooms: number;
