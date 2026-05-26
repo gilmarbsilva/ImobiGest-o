@@ -1719,6 +1719,7 @@ export default function App() {
                         <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
                           <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{p.address}</div>
+                            {p.identification && <div className="text-xs text-slate-500 font-bold mt-0.5">ID: {p.identification}</div>}
                             <div className="flex gap-2 mt-1">
                               <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.type}</span>
                               <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.usage_type}</span>
@@ -2725,7 +2726,12 @@ export default function App() {
                 </>
               ) : modalType === 'properties' ? (
                 <>
-                  <Input label="Endereço Completo" name="address" defaultValue={editingItem?.address} required />
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-3">
+                      <Input label="Endereço Completo" name="address" defaultValue={editingItem?.address} required />
+                    </div>
+                    <Input label="Nº de Identificação" name="identification" defaultValue={editingItem?.identification} placeholder="Ex: AP-102" />
+                  </div>
                   <FileUpload onUpload={(url) => setUploadedUrl(url)} label="Foto do Imóvel / Documento" />
                   <Input label="Links de Documentos (Opcional)" name="document_links" defaultValue={uploadedUrl || editingItem?.document_links} placeholder="URL ou Upload acima" />
                   <div className="grid grid-cols-2 gap-4">

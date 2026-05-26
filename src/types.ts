@@ -17,6 +17,7 @@ export interface Tenant {
 
 export interface Property {
   id: number;
+  identification?: string;
   address: string;
   type: string;
   size: number;

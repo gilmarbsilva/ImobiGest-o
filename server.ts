@@ -1024,6 +1024,7 @@ export async function createApp() {
     try {
       const {
         address,
+        identification,
         type,
         size,
         rooms,
@@ -1044,6 +1045,7 @@ export async function createApp() {
       const { data, error } = await supabase.from("properties").insert([
         {
           address,
+          identification,
           type,
           size: size ? Number(size) : null,
           rooms: rooms ? Number(rooms) : 0,
@@ -1090,9 +1092,10 @@ export async function createApp() {
 
   app.put("/api/properties/:id", async (req, res) => {
     const { id } = req.params;
-    const { address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, secondary_owners, document_links } = req.body;
+    const { address, identification, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id, secondary_owners, document_links } = req.body;
     const { error } = await supabase.from("properties").update({
       address,
+      identification,
       type,
       size: size ? Number(size) : null,
       rooms: rooms ? Number(rooms) : 0,
