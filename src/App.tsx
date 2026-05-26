@@ -1718,9 +1718,12 @@ export default function App() {
                       ) : filterList(properties).map(p => (
                         <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
                           <td className="px-8 py-5">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="bg-slate-800 text-white px-2 py-0.5 rounded text-[10px] font-black tracking-widest">#{p.id}</span>
+                              {p.identification && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-200">REF: {p.identification}</span>}
+                            </div>
                             <div className="font-black text-slate-700">{p.address}</div>
                             {p.address_complement && <div className="text-xs text-slate-500 mb-1">{p.address_complement}</div>}
-                            {p.identification && <div className="inline-block bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mt-1 border border-slate-200">ID: {p.identification}</div>}
                             <div className="flex gap-2 mt-2">
                               <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.type}</span>
                               <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.usage_type}</span>
