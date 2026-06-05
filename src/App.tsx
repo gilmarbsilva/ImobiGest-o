@@ -41,7 +41,8 @@ import {
   ArrowRight,
   Loader2,
   Menu,
-  X
+  X,
+  Eye
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -225,6 +226,9 @@ export default function App() {
 
   // Form states
   const [showModal, setShowModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewModalType, setViewModalType] = useState('');
+  const [viewingItem, setViewingItem] = useState<any>(null);
   const [modalType, setModalType] = useState('');
   const [user, setUser] = useState<{ id: string | number, name: string, email?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -1482,7 +1486,7 @@ export default function App() {
                       {filterList(brokers).length === 0 ? (
                         <tr><td colSpan={3} className="px-8 py-16 text-center text-slate-400 italic">Nenhum corretor encontrado.</td></tr>
                       ) : filterList(brokers).map(b => (
-                        <tr key={b.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <tr key={b.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(b); setViewModalType('brokers'); setShowViewModal(true); }}>
                           <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{b.name}</div>
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Doc: {b.document}</div>
@@ -1495,8 +1499,8 @@ export default function App() {
                           </td>
                           <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button onClick={() => { setEditingItem(b); setModalType('brokers'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
-                              <button onClick={() => handleDelete('brokers', b.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(b); setModalType('brokers'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete('brokers', b.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1604,7 +1608,7 @@ export default function App() {
                       {filterList(owners).length === 0 ? (
                         <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum proprietário encontrado.</td></tr>
                       ) : filterList(owners).map(o => (
-                        <tr key={o.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <tr key={o.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(o); setViewModalType('owners'); setShowViewModal(true); }}>
                           <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{o.name}</div>
                             <div className="text-xs text-slate-400 font-bold">ID: {o.id.toString().slice(0, 8)}</div>
@@ -1619,14 +1623,14 @@ export default function App() {
                           <td className="px-8 py-5">
                             <div className="flex space-x-2">
                               <button 
-                                onClick={() => { setEditingItem(o); setModalType('owners'); setShowModal(true); }}
+                                onClick={(e) => { e.stopPropagation(); setEditingItem(o); setModalType('owners'); setShowModal(true); }}
                                 className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
                                 title="Editar"
                               >
                                 <Settings size={18} />
                               </button>
                               <button 
-                                onClick={() => handleDelete('owners', o.id)}
+                                onClick={(e) => { e.stopPropagation(); handleDelete('owners', o.id); }}
                                 className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
                                 title="Excluir"
                               >
@@ -1656,7 +1660,7 @@ export default function App() {
                       {filterList(tenants).length === 0 ? (
                         <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum inquilino encontrado.</td></tr>
                       ) : filterList(tenants).map(t => (
-                        <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(t); setViewModalType('tenants'); setShowViewModal(true); }}>
                           <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{t.name}</div>
                             <div className="text-xs text-slate-400 font-bold">{t.document}</div>
@@ -1669,7 +1673,7 @@ export default function App() {
                           </td>
                           <td className="px-8 py-5">
                             <button 
-                              onClick={() => handleAsaasSync(t.id)}
+                              onClick={(e) => { e.stopPropagation(); handleAsaasSync(t.id); }}
                               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${(t as any).asaas_id ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                             >
                               <Zap size={14} fill={(t as any).asaas_id ? 'currentColor' : 'none'} />
@@ -1679,7 +1683,8 @@ export default function App() {
                           <td className="px-8 py-5">
                             <div className="flex space-x-2">
                               <button 
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSearchTerm(t.name);
                                   setIgnoreDateFilter(true);
                                   setActiveTab('financial');
@@ -1690,8 +1695,8 @@ export default function App() {
                               >
                                 <List size={18} />
                               </button>
-                              <button onClick={() => { setEditingItem(t); setModalType('tenants'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
-                              <button onClick={() => handleDelete('tenants', t.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(t); setModalType('tenants'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete('tenants', t.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1708,15 +1713,16 @@ export default function App() {
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel</th>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Características</th>
+                        <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Inquilino</th>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Proprietário</th>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(properties).length === 0 ? (
-                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum imóvel encontrado.</td></tr>
+                        <tr><td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic">Nenhum imóvel encontrado.</td></tr>
                       ) : filterList(properties).map(p => (
-                        <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(p); setViewModalType('properties'); setShowViewModal(true); }}>
                           <td className="px-8 py-5">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="bg-slate-800 text-white px-2 py-0.5 rounded text-[10px] font-black tracking-widest">#{p.id}</span>
@@ -1737,12 +1743,25 @@ export default function App() {
                             </div>
                           </td>
                           <td className="px-8 py-5">
+                            {(() => {
+                              const activeContract = contracts.find(c => c.property_id === p.id && c.status !== 'finalizado' && c.status !== 'suspenso' && Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000) > 0);
+                              return activeContract ? (
+                                <div>
+                                  <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-black uppercase tracking-tighter">Alugado</span>
+                                  <div className="text-sm font-bold text-slate-600 mt-1">{activeContract.tenant_name}</div>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">Vago</span>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-8 py-5">
                             <div className="text-sm font-bold text-slate-600">{p.owner_name}</div>
                           </td>
                           <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button onClick={() => { setEditingItem(p); setModalType('properties'); setSecondaryOwners(p.secondary_owners || []); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
-                              <button onClick={() => handleDelete('properties', p.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(p); setModalType('properties'); setSecondaryOwners(p.secondary_owners || []); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete('properties', p.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -1806,7 +1825,7 @@ export default function App() {
                           ) : filteredContracts.map(c => {
                             const extras = c.extra_charges ? JSON.parse(c.extra_charges) : [];
                             return (
-                              <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group">
+                              <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(c); setViewModalType('contracts'); setShowViewModal(true); }}>
                                 <td className="px-8 py-5">
                                   <div className="font-black text-slate-700">{c.address}</div>
                                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">ID: {c.id}</div>
@@ -1840,10 +1859,11 @@ export default function App() {
                                 </td>
                                 <td className="px-8 py-5">
                                   <div className="flex space-x-2">
-                                    <button onClick={() => { setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Editar Contrato"><Settings size={18} /></button>
-                                    <button onClick={() => handleDelete('contracts', c.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir Contrato"><Trash2 size={18} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Editar Contrato"><Settings size={18} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete('contracts', c.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir Contrato"><Trash2 size={18} /></button>
                                     <button
-                                      onClick={() => {
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         setRenewingContract(c);
                                         setShowRenewModal(true);
                                       }}
@@ -1853,9 +1873,9 @@ export default function App() {
                                       <RefreshCw size={18} />
                                     </button>
                                     {!(c as any).asaas_subscription_id ? (
-                                      <button onClick={() => handleAsaasSubscription(c.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Criar Assinatura Asaas"><Zap size={18} /></button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleAsaasSubscription(c.id); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Criar Assinatura Asaas"><Zap size={18} /></button>
                                     ) : (
-                                      <button onClick={() => handleCheckSubscription(c.id)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Verificar Assinatura"><CheckCircle2 size={18} /></button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleCheckSubscription(c.id); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Verificar Assinatura"><CheckCircle2 size={18} /></button>
                                     )}
                                   </div>
                                 </td>
@@ -2627,6 +2647,383 @@ export default function App() {
             </main>
       {/* Mobile navigation */}
       <MobileNav />
+
+
+      {/* View Detail Modal */}
+      {showViewModal && viewingItem && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowViewModal(false)}>
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e: any) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold text-slate-800">
+                {viewModalType === 'properties' ? 'Detalhes do Imóvel' :
+                 viewModalType === 'tenants' ? 'Detalhes do Inquilino' :
+                 viewModalType === 'owners' ? 'Detalhes do Proprietário' :
+                 viewModalType === 'brokers' ? 'Detalhes do Corretor' :
+                 viewModalType === 'contracts' ? 'Detalhes do Contrato' : 'Detalhes'}
+              </h3>
+              <button onClick={() => setShowViewModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {viewModalType === 'properties' && (() => {
+              const p = viewingItem;
+              const activeContract = contracts.find(c => c.property_id === p.id && c.status !== 'finalizado' && c.status !== 'suspenso' && Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000) > 0);
+              return (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="bg-slate-800 text-white px-3 py-1 rounded-lg text-xs font-black">#{p.id}</span>
+                    {p.identification && <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-xs font-black border border-emerald-200">REF: {p.identification}</span>}
+                    {activeContract ? (
+                      <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-xs font-black">ALUGADO</span>
+                    ) : (
+                      <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-lg text-xs font-black">VAGO</span>
+                    )}
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <div><span className="text-xs text-slate-400 font-bold uppercase">Endereço</span><p className="font-bold text-slate-700">{p.address}</p></div>
+                    {p.address_complement && <div><span className="text-xs text-slate-400 font-bold uppercase">Complemento</span><p className="text-slate-600">{p.address_complement}</p></div>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 rounded-2xl p-4"><span className="text-xs text-slate-400 font-bold uppercase">Tipo</span><p className="font-bold text-slate-700">{p.type}</p></div>
+                    <div className="bg-slate-50 rounded-2xl p-4"><span className="text-xs text-slate-400 font-bold uppercase">Uso</span><p className="font-bold text-slate-700">{p.usage_type}</p></div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="bg-slate-50 rounded-2xl p-4 text-center"><span className="text-xs text-slate-400 font-bold">Quartos</span><p className="text-xl font-black text-slate-700">{p.rooms}</p></div>
+                    <div className="bg-slate-50 rounded-2xl p-4 text-center"><span className="text-xs text-slate-400 font-bold">Banheiros</span><p className="text-xl font-black text-slate-700">{p.bathrooms}</p></div>
+                    <div className="bg-slate-50 rounded-2xl p-4 text-center"><span className="text-xs text-slate-400 font-bold">Garagem</span><p className="text-xl font-black text-slate-700">{p.garage_spaces}</p></div>
+                    <div className="bg-slate-50 rounded-2xl p-4 text-center"><span className="text-xs text-slate-400 font-bold">Área</span><p className="text-xl font-black text-slate-700">{p.size}<span className="text-xs">m²</span></p></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 rounded-2xl p-4"><span className="text-xs text-slate-400 font-bold uppercase">Pets</span><p className="font-bold text-slate-700">{p.pets_allowed ? 'Sim' : 'Não'}</p></div>
+                    <div className="bg-slate-50 rounded-2xl p-4"><span className="text-xs text-slate-400 font-bold uppercase">Proprietário</span><p className="font-bold text-slate-700">{p.owner_name || '-'}</p></div>
+                  </div>
+                  {activeContract && (
+                    <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100">
+                      <span className="text-xs text-emerald-600 font-bold uppercase">Inquilino Atual</span>
+                      <p className="font-bold text-emerald-800 text-lg mt-1">{activeContract.tenant_name}</p>
+                      <div className="grid grid-cols-2 gap-3 mt-3">
+                        <div><span className="text-xs text-emerald-500 font-bold">Aluguel</span><p className="font-bold text-emerald-700">R$ {activeContract.rent_value?.toLocaleString('pt-BR')}</p></div>
+                        <div><span className="text-xs text-emerald-500 font-bold">Vigência</span><p className="text-sm text-emerald-700">{new Date(activeContract.start_date).toLocaleDateString('pt-BR')} — {new Date(activeContract.end_date).toLocaleDateString('pt-BR')}</p></div>
+                      </div>
+                    </div>
+                  )}
+                  {p.document_links && (
+                    <div className="bg-slate-50 rounded-2xl p-4">
+                      <span className="text-xs text-slate-400 font-bold uppercase">Documentos</span>
+                      <a href={p.document_links} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold flex items-center gap-1 mt-1 hover:underline"><ExternalLink size={14} /> Ver documento</a>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {viewModalType === 'tenants' && (() => {
+              const t = viewingItem;
+              const tenantContracts = contracts.filter(c => c.tenant_id === t.id);
+              return (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl font-black text-slate-400">{t.name?.charAt(0)}</div>
+                    <div><p className="font-bold text-lg text-slate-800">{t.name}</p><p className="text-xs text-slate-400 font-bold">{t.document}</p></div>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><span className="text-xs text-slate-400 font-bold uppercase">E-mail</span><p className="text-sm font-medium text-slate-700">{t.email || '-'}</p></div>
+                      <div><span className="text-xs text-slate-400 font-bold uppercase">Telefone</span><p className="text-sm font-medium text-slate-700">{t.phone || '-'}</p></div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-4">
+                    <span className="text-xs text-slate-400 font-bold uppercase">Asaas</span>
+                    <p className="font-bold text-slate-700 mt-1">{(t as any).asaas_id ? 'Conectado' : 'Não sincronizado'}</p>
+                  </div>
+                  {tenantContracts.length > 0 && (
+                    <div>
+                      <span className="text-xs text-slate-400 font-bold uppercase mb-2 block">Contratos Vinculados</span>
+                      <div className="space-y-2">
+                        {tenantContracts.map((c: any) => (
+                          <div key={c.id} className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                            <p className="font-bold text-blue-800">{c.address}</p>
+                            <div className="flex gap-4 mt-1 text-xs text-blue-600">
+                              <span>R$ {c.rent_value?.toLocaleString('pt-BR')}/mês</span>
+                              <span>{new Date(c.start_date).toLocaleDateString('pt-BR')} — {new Date(c.end_date).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {t.history && (
+                    <div className="bg-slate-50 rounded-2xl p-4">
+                      <span className="text-xs text-slate-400 font-bold uppercase">Histórico / Ocorrências</span>
+                      <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{t.history}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {viewModalType === 'owners' && (() => {
+              const o = viewingItem;
+              const ownerProps = properties.filter(p => p.owner_id === o.id);
+              return (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl font-black text-slate-400">{o.name?.charAt(0)}</div>
+                    <div><p className="font-bold text-lg text-slate-800">{o.name}</p><p className="text-xs text-slate-400 font-bold">{o.document}</p></div>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><span className="text-xs text-slate-400 font-bold uppercase">E-mail</span><p className="text-sm font-medium text-slate-700">{o.email || '-'}</p></div>
+                      <div><span className="text-xs text-slate-400 font-bold uppercase">Telefone</span><p className="text-sm font-medium text-slate-700">{o.phone || '-'}</p></div>
+                    </div>
+                  </div>
+                  {ownerProps.length > 0 && (
+                    <div>
+                      <span className="text-xs text-slate-400 font-bold uppercase mb-2 block">Imóveis Vinculados ({ownerProps.length})</span>
+                      <div className="space-y-2">
+                        {ownerProps.map((prop: any) => {
+                          const activeC = contracts.find((c: any) => c.property_id === prop.id && c.status !== 'finalizado' && c.status !== 'suspenso' && Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000) > 0);
+                          return (
+                            <div key={prop.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-bold text-slate-700">{prop.address}</p>
+                                  <p className="text-xs text-slate-400">{prop.type} • {prop.size}m²</p>
+                                </div>
+                                {activeC ? (
+                                  <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-black">ALUGADO</span>
+                                ) : (
+                                  <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black">VAGO</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {viewModalType === 'brokers' && (() => {
+              const b = viewingItem;
+              return (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl font-black text-slate-400">{b.name?.charAt(0)}</div>
+                    <div><p className="font-bold text-lg text-slate-800">{b.name}</p><p className="text-xs text-slate-400 font-bold">{b.document}</p></div>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><span className="text-xs text-slate-400 font-bold uppercase">E-mail</span><p className="text-sm font-medium text-slate-700">{b.email || '-'}</p></div>
+                      <div><span className="text-xs text-slate-400 font-bold uppercase">Telefone</span><p className="text-sm font-medium text-slate-700">{b.phone || '-'}</p></div>
+                    </div>
+                    <div><span className="text-xs text-slate-400 font-bold uppercase">Chave PIX</span><p className="text-sm font-medium text-slate-700">{b.pix_key || '-'}</p></div>
+                  </div>
+                  {(() => {
+                    const brokerContracts = contracts.filter((c: any) => c.broker_id === b.id);
+                    return brokerContracts.length > 0 ? (
+                      <div>
+                        <span className="text-xs text-slate-400 font-bold uppercase mb-2 block">Contratos Vinculados ({brokerContracts.length})</span>
+                        <div className="space-y-2">
+                          {brokerContracts.map((c: any) => (
+                            <div key={c.id} className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                              <p className="font-bold text-blue-800">{c.address}</p>
+                              <p className="text-xs text-blue-600">Inquilino: {c.tenant_name} • R$ {c.rent_value?.toLocaleString('pt-BR')}/mês</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              );
+            })()}
+
+            {viewModalType === 'contracts' && (() => {
+              const c = viewingItem;
+              return (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="bg-slate-800 text-white px-3 py-1 rounded-lg text-xs font-black">ID: #{c.id}</span>
+                    {c.status === 'finalizado' ? (
+                      <span className="bg-slate-100 text-slate-500 px-3 py-1 rounded-lg text-xs font-black">FINALIZADO</span>
+                    ) : c.status === 'suspenso' ? (
+                      <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-xs font-black">SUSPENSO</span>
+                    ) : (
+                      <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-xs font-black">ATIVO</span>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <div>
+                      <span className="text-xs text-slate-400 font-bold uppercase">Imóvel</span>
+                      <p className="font-bold text-slate-700">{c.address || '-'}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs text-slate-400 font-bold uppercase">Inquilino</span>
+                        <p className="font-bold text-slate-700">{c.tenant_name || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-400 font-bold uppercase">Proprietário</span>
+                        <p className="font-bold text-slate-700">{c.owner_name || '-'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-100 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs text-emerald-600 font-bold uppercase">Aluguel Mensal</span>
+                        <p className="font-black text-emerald-800 text-lg">R$ {c.rent_value?.toLocaleString('pt-BR')}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-emerald-600 font-bold uppercase">Dia de Vencimento</span>
+                        <p className="font-black text-emerald-800 text-lg">Dia {c.due_day}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-emerald-100/50">
+                      <div>
+                        <span className="text-xs text-emerald-600 font-bold uppercase">Taxas</span>
+                        <p className="text-sm font-bold text-emerald-700">R$ {c.fees?.toLocaleString('pt-BR') || '0,00'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-emerald-600 font-bold uppercase">Despesas</span>
+                        <p className="text-sm font-bold text-emerald-700">R$ {c.charges?.toLocaleString('pt-BR') || '0,00'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <span className="text-xs text-slate-400 font-bold uppercase block mb-1">Prazos e Reajuste</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs text-slate-400">Data Início</span>
+                        <p className="text-sm font-bold text-slate-700">{c.start_date ? new Date(c.start_date).toLocaleDateString('pt-BR') : '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-400">Data Fim</span>
+                        <p className="text-sm font-bold text-slate-700">{c.end_date ? new Date(c.end_date).toLocaleDateString('pt-BR') : '-'}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200">
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase">Índice</span>
+                        <p className="text-xs font-bold text-slate-700">{c.adjustment_index || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase">Último Reajuste</span>
+                        <p className="text-xs font-bold text-slate-700">{c.last_adjustment_date ? new Date(c.last_adjustment_date).toLocaleDateString('pt-BR') : '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase">Próximo Reajuste</span>
+                        <p className="text-xs font-bold text-slate-700">{c.next_adjustment_date ? new Date(c.next_adjustment_date).toLocaleDateString('pt-BR') : '-'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(c.guarantee_type || c.guarantee_value) && (
+                    <div className="bg-slate-50 rounded-2xl p-5 space-y-2">
+                      <span className="text-xs text-slate-400 font-bold uppercase block">Garantia</span>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-xs text-slate-400">Tipo</span>
+                          <p className="text-sm font-bold text-slate-700">{c.guarantee_type || '-'}</p>
+                        </div>
+                        {c.guarantee_value && (
+                          <div>
+                            <span className="text-xs text-slate-400">Valor</span>
+                            <p className="text-sm font-bold text-slate-700">R$ {c.guarantee_value?.toLocaleString('pt-BR')}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {(c.water_installation || c.electricity_installation || c.gas_installation) && (
+                    <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                      <span className="text-xs text-slate-400 font-bold uppercase block">Instalações (Nº de Inscrição)</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase">Água</span>
+                          <p className="text-xs font-bold text-slate-700">{c.water_installation || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase">Luz</span>
+                          <p className="text-xs font-bold text-slate-700">{c.electricity_installation || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase">Gás</span>
+                          <p className="text-xs font-bold text-slate-700">{c.gas_installation || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {c.broker_id && (
+                    <div className="bg-slate-50 rounded-2xl p-5 space-y-2">
+                      <span className="text-xs text-slate-400 font-bold uppercase block">Corretor & Comissão</span>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-xs text-slate-400">Corretor</span>
+                          <p className="text-sm font-bold text-slate-700">{c.broker_name || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-400">Comissão Corretor</span>
+                          <p className="text-sm font-bold text-slate-700">{c.broker_commission_percent ? `${c.broker_commission_percent}%` : '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {c.document_links && (
+                    <div className="bg-slate-50 rounded-2xl p-4">
+                      <span className="text-xs text-slate-400 font-bold uppercase block mb-1">Contrato Assinado</span>
+                      <a href={c.document_links} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold flex items-center gap-1 mt-1 hover:underline">
+                        <ExternalLink size={14} /> Ver documento
+                      </a>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => {
+                  const item = viewingItem;
+                  setShowViewModal(false);
+                  setEditingItem(item);
+                  setModalType(viewModalType);
+                  if (viewModalType === 'properties') setSecondaryOwners(item.secondary_owners || []);
+                  if (viewModalType === 'contracts') {
+                    const extras = item.extra_charges ? JSON.parse(item.extra_charges) : [];
+                    setExtraCharges(extras);
+                  }
+                  setShowModal(true);
+                }}
+                className="flex-1 bg-emerald-500 text-white py-3 rounded-2xl font-bold hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
+              >
+                <Settings size={18} /> Editar
+              </button>
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+              >
+                Fechar
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toast && (
