@@ -1285,193 +1285,264 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {activeTab === 'dashboard' && (() => {
-                // Calculations based on real data
-                const activeContracts = contracts.filter(c => {
-                  const diffDays = Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000);
-                  return c.status !== 'finalizado' && c.status !== 'suspenso' && diffDays > 0;
-                });
-                const occupancyRate = properties.length ? Math.round((activeContracts.length / properties.length) * 100) : 0;
-                
-                const currentMonthPays = payments.filter(p => new Date(p.received_date || p.due_date).getMonth() === new Date().getMonth() && p.status === 'paid');
-                const monthlyRevenue = currentMonthPays.reduce((acc, p) => acc + (p.amount_paid || 0), 0);
-                
-                // For demonstration of variation (+12% like mockup)
-                const lastMonthPays = payments.filter(p => {
-                  const d = new Date(); d.setMonth(d.getMonth() - 1);
-                  return new Date(p.received_date || p.due_date).getMonth() === d.getMonth() && p.status === 'paid';
-                });
-                const lastMonthRevenue = lastMonthPays.reduce((acc, p) => acc + (p.amount_paid || 0), 0);
-                const revenueGrowth = lastMonthRevenue ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : 12; // fallback to 12 if no prev data
-
-                const expiringContracts = contracts.filter(c => {
-                  const diffDays = Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000);
-                  return c.status !== 'finalizado' && diffDays > 0 && diffDays <= 60;
-                }).length;
-
-                const newProposals = 2; // Fixed as per mockup for now, or could map to recent tenants
-
-                // Pie Chart Data
-                const rented = activeContracts.length;
-                const vacant = Math.max(0, properties.length - rented);
-                const inMaintenance = maintenances.filter(m => m.status === 'pending').length;
-                const totalStatus = rented + vacant + inMaintenance || 1;
-                const rentedPct = Math.round((rented / totalStatus) * 100);
-                const vacantPct = Math.round((vacant / totalStatus) * 100);
-                const maintPct = Math.round((inMaintenance / totalStatus) * 100);
-
-                // Financial Evolution Chart Data
-                const last6Months = Array.from({ length: 6 }, (_, i) => {
-                  const d = new Date();
-                  d.setMonth(d.getMonth() - (5 - i));
-                  return { month: d.getMonth(), year: d.getFullYear(), label: d.toLocaleString('pt-BR', { month: 'short' }) };
-                });
-                const chartData = last6Months.map(({ month, year, label }) => {
-                  const monthPays = payments.filter(p => {
-                    const d = new Date(p.received_date || p.due_date);
-                    return d.getMonth() === month && d.getFullYear() === year;
-                  });
-                  return {
-                    name: label.charAt(0).toUpperCase() + label.slice(1),
-                    receita: monthPays.filter(p => p.status === 'paid').reduce((a, p) => a + (p.amount_paid || 0), 0),
-                  };
-                });
-
-                return (
-                  <div className="bg-[#0B1121] -mx-8 -mt-8 p-4 md:p-8 min-h-[calc(100vh-80px)] text-white font-sans animate-in fade-in slide-in-from-bottom-4 duration-500 md:rounded-tl-[2rem]">
-                    <div className="max-w-md md:max-w-4xl mx-auto space-y-6">
-                      
-                      {/* Header */}
-                      <div className="mb-6 pt-4">
-                        <h2 className="text-3xl font-bold text-white tracking-tight">Dashboard</h2>
-                        <p className="text-slate-400 mt-1 text-sm">Visão Geral</p>
-                      </div>
-
-                      {/* Row 1 & 2 (Grid 2x2) */}
-                      <div className="grid grid-cols-2 gap-4">
-                        
-                        {/* Card: Ocupação */}
-                        <div className="bg-slate-800/40 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-5 flex flex-col justify-between hover:bg-slate-800/60 transition-colors">
-                          <div className="flex justify-between items-center text-slate-300 text-sm mb-4">
-                            <span>Ocupação Atual</span>
-                            <ChevronRight size={16} className="text-slate-500" />
-                          </div>
-                          <div className="relative h-24 flex flex-col items-center justify-end mt-2">
-                            <svg viewBox="0 0 100 50" className="w-32 absolute top-0 overflow-visible">
-                              <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#1e293b" strokeWidth="10" strokeLinecap="round" />
-                              <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#06b6d4" strokeWidth="10" strokeLinecap="round" strokeDasharray="125.6" strokeDashoffset={125.6 * (1 - occupancyRate/100)} className="transition-all duration-1000 ease-out" />
-                            </svg>
-                            <span className="font-bold text-3xl text-white relative z-10 -mt-2">{occupancyRate}%</span>
-                          </div>
-                          <div className="text-center text-slate-400 text-xs mt-2 font-medium">Ocupados</div>
-                        </div>
-
-                        {/* Card: Receita */}
-                        <div className="bg-slate-800/40 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-5 flex flex-col justify-between hover:bg-slate-800/60 transition-colors">
-                          <div className="flex justify-between items-center text-slate-300 text-sm mb-2">
-                            <span>Receita Mensal</span>
-                            <ChevronRight size={16} className="text-slate-500" />
-                          </div>
-                          <div className="h-16 w-full -mx-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={chartData}>
-                                <defs>
-                                  <linearGradient id="colorMini" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
-                                  </linearGradient>
-                                </defs>
-                                <Area type="monotone" dataKey="receita" stroke="#06b6d4" strokeWidth={2} fill="url(#colorMini)" dot={false} />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                          </div>
-                          <div className="mt-1 flex items-baseline gap-2">
-                            <span className="font-bold text-lg text-white truncate" title={`R$ ${monthlyRevenue.toLocaleString('pt-BR')}`}>R$ {(monthlyRevenue/1000).toFixed(1)}k</span>
-                            <span className={`text-xs ${revenueGrowth >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {revenueGrowth > 0 ? '+' : ''}{revenueGrowth}%
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Card: Contratos */}
-                        <div className="bg-slate-800/40 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-5 flex flex-col justify-between hover:bg-slate-800/60 transition-colors">
-                          <div className="flex justify-between items-start text-slate-300 text-sm mb-2">
-                            <span className="leading-tight">Contratos<br/>Próximos do Fim</span>
-                            <ChevronRight size={16} className="text-slate-500 shrink-0" />
-                          </div>
-                          <div className="flex justify-between items-end mt-4">
-                            <span className="text-3xl font-bold text-white">{expiringContracts}</span>
-                            <span className="text-emerald-400 text-xs font-medium cursor-pointer hover:text-emerald-300" onClick={() => { setActiveTab('contracts'); setContractStatusFilter('ativos'); }}>Ver Todos</span>
-                          </div>
-                        </div>
-
-                        {/* Card: Propostas */}
-                        <div className="bg-slate-800/40 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-5 flex flex-col justify-between hover:bg-slate-800/60 transition-colors">
-                          <div className="flex justify-between items-start text-slate-300 text-sm mb-2">
-                            <span className="leading-tight">Novas<br/>Propostas</span>
-                            <ChevronRight size={16} className="text-slate-500 shrink-0" />
-                          </div>
-                          <div className="flex justify-between items-end mt-4">
-                            <span className="text-3xl font-bold text-white">{newProposals}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Evolução Financeira */}
-                      <div className="bg-slate-800/40 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-5 md:p-6 hover:bg-slate-800/60 transition-colors">
-                        <div className="text-slate-300 text-sm mb-6">Evolução Financeira</div>
-                        <div className="h-40 md:h-48">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-                              <defs>
-                                <linearGradient id="colorEvol" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
-                                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                              <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                              <YAxis tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                              <Tooltip formatter={(v) => `R$ ${Number(v).toLocaleString('pt-BR')}`} contentStyle={{ borderRadius: '12px', border: '1px solid #334155', backgroundColor: '#1e293b', color: '#fff', fontSize: 12 }} />
-                              <Area type="monotone" dataKey="receita" stroke="#06b6d4" strokeWidth={2.5} fill="url(#colorEvol)" dot={{ r: 3, fill: '#06b6d4', strokeWidth: 0 }} />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-
-                      {/* Status dos Imóveis */}
-                      <div className="bg-slate-800/40 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-5 md:p-6 hover:bg-slate-800/60 transition-colors">
-                        <div className="text-slate-300 text-sm mb-6">Status dos Imóveis</div>
-                        <div className="flex flex-row items-center justify-between">
-                          <div className="w-1/2 flex justify-center relative">
-                            <svg viewBox="0 0 40 40" className="w-24 h-24 md:w-32 md:h-32 transform -rotate-90">
-                              <circle cx="20" cy="20" r="16" fill="none" stroke="#475569" strokeWidth="6" />
-                              <circle cx="20" cy="20" r="16" fill="none" stroke="#06b6d4" strokeWidth="6" strokeDasharray="100" strokeDashoffset={100 - rentedPct} strokeLinecap="round" className="transition-all duration-1000" />
-                              <circle cx="20" cy="20" r="16" fill="none" stroke="#64748b" strokeWidth="6" strokeDasharray="100" strokeDashoffset={100 - maintPct} strokeLinecap="round" className="transform origin-center rotate-[120deg]" />
-                            </svg>
-                          </div>
-                          <div className="w-1/2 space-y-4 pl-4 border-l border-slate-700/50">
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="flex items-center gap-2 text-slate-300"><div className="w-2.5 h-2.5 rounded-full bg-[#06b6d4]"></div>Alugados</span>
-                              <span className="text-slate-400 text-xs">{rentedPct}%</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="flex items-center gap-2 text-slate-300"><div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>Vagos</span>
-                              <span className="text-slate-400 text-xs">{vacantPct}%</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="flex items-center gap-2 text-slate-300"><div className="w-2.5 h-2.5 rounded-full bg-slate-500"></div>Manutenção</span>
-                              <span className="text-slate-400 text-xs">{maintPct}%</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="pb-8"></div>
+              {activeTab === 'dashboard' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-3xl font-black text-slate-800 tracking-tight">Visão Geral</h2>
+                      <p className="text-slate-500 font-medium">Resumo do desempenho da sua imobiliária</p>
                     </div>
                   </div>
-                );
-              })()}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Card Pagos */}
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Pagos</h3>
+                        <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl">
+                          <CheckCircle2 size={20} />
+                        </div>
+                      </div>
+                      <div className="flex items-end gap-2 mb-4">
+                        <span className="text-4xl font-black text-slate-800">
+                          {payments.filter(p => p.status === 'paid').length}
+                        </span>
+                        <span className="text-slate-400 font-bold mb-1">pagamentos</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(payments.filter(p => p.status === 'paid').length / (payments.length || 1)) * 100}%` }}
+                          className="bg-emerald-500 h-full"
+                        />
+                      </div>
+                    </div>
+
+                       {/* Card Vencidos */}
+                       <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                         <div className="flex justify-between items-start mb-4">
+                           <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Vencidos</h3>
+                           <div className="p-2 bg-red-50 text-red-500 rounded-xl">
+                             <AlertCircle size={20} />
+                           </div>
+                         </div>
+                         <div className="flex items-end gap-2 mb-4">
+                           <span className="text-4xl font-black text-slate-800">
+                             {payments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).length}
+                           </span>
+                           <span className="text-slate-400 font-bold mb-1">pagamentos</span>
+                         </div>
+                         <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                           <motion.div
+                             initial={{ width: 0 }}
+                             animate={{ width: `${(payments.filter(p => p.status === 'pending' && new Date(p.due_date) < new Date()).length / (payments.length || 1)) * 100}%` }}
+                             className="bg-red-500 h-full"
+                           />
+                         </div>
+                       </div>
+
+                       {/* Card A Vencer */}
+                       <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                         <div className="flex justify-between items-start mb-4">
+                           <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">A Vencer</h3>
+                           <div className="p-2 bg-amber-50 text-amber-500 rounded-xl">
+                             <Clock size={20} />
+                           </div>
+                         </div>
+                         <div className="flex items-end gap-2 mb-4">
+                           <span className="text-4xl font-black text-slate-800">
+                             {payments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).length}
+                           </span>
+                           <span className="text-slate-400 font-bold mb-1">pagamentos</span>
+                         </div>
+                         <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                           <motion.div
+                             initial={{ width: 0 }}
+                             animate={{ width: `${(payments.filter(p => p.status === 'pending' && new Date(p.due_date) >= new Date()).length / (payments.length || 1)) * 100}%` }}
+                             className="bg-amber-500 h-full"
+                           />
+                         </div>
+                       </div>
+
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Faturamento Mês</h3>
+                        <div className="p-2 bg-blue-50 text-blue-500 rounded-xl">
+                          <DollarSign size={20} />
+                        </div>
+                      </div>
+                      <div className="mb-4">
+                        <span className="text-4xl font-black text-slate-800">
+                          R$ {payments.filter(p => p.status === 'paid').reduce((acc, p) => acc + (p.amount_paid || 0), 0).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 font-bold flex items-center gap-1">
+                        <TrendingUp size={14} className="text-emerald-500" />
+                        <span>Calculado com base em faturas pagas</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Inquilinos Ativos</h3>
+                        <div className="p-2 bg-amber-50 text-amber-500 rounded-xl">
+                          <Users size={20} />
+                        </div>
+                      </div>
+                      <div className="mb-4">
+                        <span className="text-4xl font-black text-slate-800">{tenants.length}</span>
+                      </div>
+                      <div className="flex -space-x-2">
+                        {tenants.slice(0, 5).map((t, i) => (
+                          <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500">
+                            {t.name.charAt(0)}
+                          </div>
+                        ))}
+                        {tenants.length > 5 && (
+                          <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                            +{tenants.length - 5}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <section className="space-y-4">
+                      <div className="flex justify-between items-center px-2">
+                        <h3 className="text-lg font-black text-slate-700">Alertas Críticos</h3>
+                        <span className="px-3 py-1 bg-rose-50 text-rose-500 text-xs font-bold rounded-full">Atenção Necessária</span>
+                      </div>
+                      <div className="space-y-3">
+                        {(() => {
+                          const alerts: any[] = [];
+                          
+                          // Expiration alerts
+                          contracts.forEach(c => {
+                            const today = new Date();
+                            const endDate = new Date(c.end_date);
+                            const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                            if (diffDays <= 60) {
+                              alerts.push({
+                                title: diffDays <= 0 ? 'Contrato Vencido' : 'Contrato Vencendo',
+                                desc: `${c.tenant_name} (${c.address})`,
+                                icon: diffDays <= 0 ? <AlertCircle size={18} /> : <Clock size={18} />,
+                                color: diffDays <= 0 ? 'text-rose-700 bg-rose-50 border-rose-100' : 'text-amber-700 bg-amber-50 border-amber-100'
+                              });
+                            }
+                          });
+
+                          // Maintenance alerts
+                          maintenances.filter(m => m.status === 'pending').forEach(m => {
+                            alerts.push({
+                              title: 'Manutenção Pendente',
+                              desc: `${m.address}: ${m.description}`,
+                              icon: <Wrench size={18} />,
+                              color: 'text-orange-700 bg-orange-50 border-orange-100'
+                            });
+                          });
+
+                          return alerts.length > 0 ? alerts.map((a, i) => (
+                            <div key={i} className={`p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] ${a.color}`}>
+                              <div className="p-2 rounded-xl bg-white/50">{a.icon}</div>
+                              <div>
+                                <p className="font-bold text-sm">{a.title}</p>
+                                <p className="text-xs opacity-70">{a.desc}</p>
+                              </div>
+                            </div>
+                          )) : (
+                            <div className="p-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                              <CheckCircle2 size={32} className="mx-auto text-emerald-300 mb-2" />
+                              <p className="text-slate-400 font-bold">Tudo em dia!</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </section>
+
+                    <section className="space-y-4">
+                      <div className="flex justify-between items-center px-2">
+                        <h3 className="text-lg font-black text-slate-700">Ações Rápidas</h3>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button 
+                          onClick={() => { setModalType('contracts'); setShowModal(true); }}
+                          className="p-6 bg-emerald-50 text-emerald-700 rounded-3xl border border-emerald-100 flex flex-col items-center gap-3 hover:bg-emerald-100 transition-all group"
+                        >
+                          <div className="p-3 bg-white rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                            <Plus size={24} />
+                          </div>
+                          <span className="font-black text-xs uppercase tracking-widest">Novo Contrato</span>
+                        </button>
+                        <button 
+                          onClick={() => { setModalType('properties'); setShowModal(true); }}
+                          className="p-6 bg-blue-50 text-blue-700 rounded-3xl border border-blue-100 flex flex-col items-center gap-3 hover:bg-blue-100 transition-all group"
+                        >
+                          <div className="p-3 bg-white rounded-2xl shadow-sm group-hover:scale-110 transition-transform">
+                            <Home size={24} />
+                          </div>
+                          <span className="font-black text-xs uppercase tracking-widest">Cadastrar Imóvel</span>
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* Gráfico de Evolução Mensal */}
+                  {(() => {
+                    const last6Months = Array.from({ length: 6 }, (_, i) => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() - (5 - i));
+                      return { month: d.getMonth(), year: d.getFullYear(), label: d.toLocaleString('pt-BR', { month: 'short' }) };
+                    });
+                    const chartData = last6Months.map(({ month, year, label }) => {
+                      const monthPays = payments.filter(p => {
+                        const d = new Date(p.received_date || p.due_date);
+                        return d.getMonth() === month && d.getFullYear() === year;
+                      });
+                      return {
+                        name: label.charAt(0).toUpperCase() + label.slice(1),
+                        recebido: monthPays.filter(p => p.status === 'paid').reduce((a, p) => a + (p.amount_paid || 0), 0),
+                        repassado: monthPays.filter(p => p.transfer_status === 'done').reduce((a, p) => a + (p.transfer_amount || 0), 0),
+                      };
+                    });
+                    return (
+                      <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                        <div className="flex justify-between items-center mb-6">
+                          <div>
+                            <h3 className="text-slate-500 text-sm font-bold uppercase tracking-wider">Evolução Financeira</h3>
+                            <p className="text-xs text-slate-400 font-medium mt-0.5">Últimos 6 meses</p>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs font-bold">
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-400" />Recebido</div>
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-400" />Repassado</div>
+                          </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="colorRecebido" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                              <linearGradient id="colorRepassado" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15}/>
+                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                            <YAxis tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                            <Tooltip formatter={(v: any) => `R$ ${Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2})}`} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: 12 }} />
+                            <Area type="monotone" dataKey="recebido" stroke="#10b981" strokeWidth={2.5} fill="url(#colorRecebido)" dot={{ r: 4, fill: '#10b981', strokeWidth: 0 }} />
+                            <Area type="monotone" dataKey="repassado" stroke="#3b82f6" strokeWidth={2.5} fill="url(#colorRepassado)" dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {activeTab === 'brokers' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                   <table className="w-full text-left">
