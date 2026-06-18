@@ -319,7 +319,13 @@ export async function createApp() {
   // Asaas Integration
   const asaasFetch = async (endpoint: string, options: any = {}) => {
     const apiKey = process.env.ASAAS_API_KEY;
-    const apiUrl = process.env.ASAAS_API_URL || "https://www.asaas.com/api/v3";
+    
+    // Auto-detect Sandbox key prefix to default to the Sandbox URL
+    let defaultApiUrl = "https://www.asaas.com/api/v3";
+    if (apiKey && apiKey.startsWith("$aact_hmlg_")) {
+      defaultApiUrl = "https://sandbox.asaas.com/api/v3";
+    }
+    const apiUrl = process.env.ASAAS_API_URL || defaultApiUrl;
 
     if (!apiKey) {
       throw new Error("ASAAS_API_KEY não configurada no ambiente.");
@@ -1308,7 +1314,7 @@ const created = [];
   app.get("/api/payments", async (req, res) => {
     const { data, error } = await supabase
       .from("payments")
-      .select("*, contracts(tenants(name), properties(address, owners(name)))");
+      .select("*, contracts(tenants(name), properties(address, owners!properties_owner_id_fkey(name)))");
 
     if (error) return res.status(500).json({ error: error.message });
 
