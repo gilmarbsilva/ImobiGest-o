@@ -348,6 +348,52 @@ export async function createApp() {
     return response.json();
   };
 
+  app.get("/api/asaas/diagnose", async (req, res) => {
+    try {
+      const apiKey = process.env.ASAAS_API_KEY || "";
+      const apiUrl = process.env.ASAAS_API_URL || "";
+      
+      let defaultApiUrl = "https://www.asaas.com/api/v3";
+      if (apiKey.startsWith("$aact_hmlg_")) {
+        defaultApiUrl = "https://sandbox.asaas.com/api/v3";
+      }
+      const resolvedApiUrl = apiUrl || defaultApiUrl;
+
+      const maskedKey = apiKey 
+        ? `${apiKey.substring(0, 15)}...${apiKey.substring(apiKey.length - 4)} (len: ${apiKey.length})`
+        : "undefined/empty";
+
+      console.log(`[ASAAS-DIAGNOSE] Key: ${maskedKey}, ConfigUrl: ${apiUrl}, ResolvedUrl: ${resolvedApiUrl}`);
+
+      const testRes = await fetch(`${resolvedApiUrl}/customers?limit=1`, {
+        headers: {
+          "Content-Type": "application/json",
+          "access_token": apiKey,
+        }
+      });
+
+      const status = testRes.status;
+      let responseBody = null;
+      try {
+        responseBody = await testRes.json();
+      } catch (err: any) {
+        responseBody = `Failed to parse JSON: ${err.message}`;
+      }
+
+      res.json({
+        hasKey: !!apiKey,
+        keyType: apiKey.startsWith("$aact_hmlg_") ? "sandbox" : "production",
+        maskedKey,
+        apiUrlConfig: apiUrl,
+        resolvedApiUrl,
+        httpStatus: status,
+        responseBody
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/asaas/sync-tenant/:id", async (req, res) => {
     try {
       const { id } = req.params;
