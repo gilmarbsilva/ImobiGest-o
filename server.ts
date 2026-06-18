@@ -1143,11 +1143,12 @@ export async function createApp() {
         .from("contracts")
         .select("*, tenants(name), properties(address)")
         .lte("start_date", targetMonthEnd)
-        .gte("end_date", targetMonthStart);
+        .or(`end_date.is.null,end_date.gte.${targetMonthStart}`);
 
       if (error) throw error;
 
-      const created = [];
+      console.log('Contracts fetched:', contracts ? contracts.length : 0);
+const created = [];
       const contractsList = Array.isArray(contracts) ? contracts : [];
 
       for (const contract of contractsList) {
