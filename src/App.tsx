@@ -3311,7 +3311,13 @@ export default function App() {
                     <label className="text-sm font-medium text-slate-700">Imóvel</label>
                     <select name="property_id" defaultValue={editingItem?.property_id} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" required>
                       <option value="">Selecione...</option>
-                      {properties.map(p => <option key={p.id} value={p.id}>{p.address}</option>)}
+                      {properties.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.address}
+                          {p.address_complement && ` - ${p.address_complement}`}
+                          {p.identification && ` (${p.identification})`}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="space-y-1">
@@ -3543,7 +3549,13 @@ export default function App() {
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-slate-700">Imóvel</label>
                     <select name="property_id" defaultValue={editingItem?.property_id} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" required>
-                      {properties.map(p => <option key={p.id} value={p.id}>{p.address}</option>)}
+                      {properties.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.address}
+                          {p.address_complement && ` - ${p.address_complement}`}
+                          {p.identification && ` (${p.identification})`}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="space-y-1">
