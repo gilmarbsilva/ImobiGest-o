@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT UNIQUE NOT NULL,
   password TEXT NOT NULL,
   name TEXT,
+  role TEXT NOT NULL DEFAULT 'user', -- 'admin' ou 'user'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -151,10 +152,8 @@ CREATE TABLE IF NOT EXISTS maintenances (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Insert Default Admin User
-INSERT INTO users (username, name, password) 
-VALUES ('admin', 'Administrador', 'admin123')
-ON CONFLICT (username) DO NOTHING;
+-- O usuário administrador é criado pelo servidor via Supabase Auth
+-- (variáveis ADMIN_USERNAME e ADMIN_PASSWORD). Não crie usuários com senha fixa aqui.
 
 -- RLS Policies (Optional - Enable if you want to use ANON_KEY on server)
 -- ALTER TABLE users ENABLE ROW LEVEL SECURITY;

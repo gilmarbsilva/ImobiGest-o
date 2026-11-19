@@ -45,6 +45,50 @@ if (!ADMIN_PASSWORD) {
   console.warn(`\n[SECURITY WARNING] ADMIN_PASSWORD não configurada no ambiente. Usando senha gerada aleatoriamente: ${ADMIN_PASSWORD}`);
 }
 
+// Quem é administrador: usa a coluna "role" da tabela users; se ela não existir, vale o e-mail ADMIN_USERNAME
+const resolveRole = (email?: string, profileRole?: string): 'admin' | 'user' => {
+  if (profileRole === 'admin') return 'admin';
+  return email && email.toLowerCase() === ADMIN_USERNAME.toLowerCase() ? 'admin' : 'user';
+};
+
+// Exige perfil de administrador (backup, importação, exclusão, transferências, diagnósticos)
+const requireAdmin = (req: any, res: any, next: any) => {
+  const user = (req.session as any)?.user;
+  if (!user) return res.status(401).json({ error: "Não autorizado. Por favor, faça login." });
+  if (user.role !== 'admin') return res.status(403).json({ error: "Acesso restrito a administradores." });
+  next();
+};
+
+// Limite de tentativas de login: 5 falhas por e-mail+IP a cada 15 minutos (em memória)
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILS = 5;
+const loginAttempts = new Map<string, { count: number; first: number }>();
+const loginKey = (req: any, username: string) => `${req.ip}|${username.toLowerCase()}`;
+const isLoginBlocked = (key: string) => {
+  const entry = loginAttempts.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.first > LOGIN_WINDOW_MS) { loginAttempts.delete(key); return false; }
+  return entry.count >= LOGIN_MAX_FAILS;
+};
+const registerLoginFail = (key: string) => {
+  if (loginAttempts.size > 2000) {
+    const now = Date.now();
+    for (const [k, v] of loginAttempts) if (now - v.first > LOGIN_WINDOW_MS) loginAttempts.delete(k);
+  }
+  const entry = loginAttempts.get(key);
+  if (!entry || Date.now() - entry.first > LOGIN_WINDOW_MS) loginAttempts.set(key, { count: 1, first: Date.now() });
+  else entry.count += 1;
+};
+
+// Exige login (usado em rotas registradas antes do authMiddleware global)
+const requireLogin = (req: any, res: any, next: any) => {
+  const session = req.session as any;
+  if (!session?.user) {
+    return res.status(401).json({ error: "Não autorizado. Por favor, faça login." });
+  }
+  next();
+};
+
 // Auth Middleware for other API routes
 const authMiddleware = async (req: any, res: any, next: any) => {
   // Allow all non-API routes (frontend assets, etc.)
@@ -87,7 +131,7 @@ export async function createApp() {
 
       console.log(`[SEED] Verificando admin: ${targetAdmin}`);
       
-      const { data: existing, error: checkError } = await supabase.from("users").select("id").eq("username", targetAdmin).maybeSingle();
+      const { data: existing, error: checkError } = await supabase.from("users").select("id").eq("username", targetAdmin.toLowerCase()).maybeSingle();
 
       if (existing) {
         console.log("[SEED] Admin já existe na tabela 'users'.");
@@ -107,10 +151,16 @@ export async function createApp() {
       });
 
       if (authError) {
-        if (authError.message.includes('already registered')) {
-          console.log("[SEED] Admin já registrado no Auth. Tentando recuperar ID...");
-          // If already in auth, we just need to link it in our table
-          // This part is tricky without knowing the ID, but in dev we can just ignore or manually fix.
+        if (/already (been )?registered/i.test(authError.message)) {
+          console.log("[SEED] Admin já registrado no Auth. Vinculando à tabela 'users'...");
+          const { data: list } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
+          const found = list?.users?.find((u: any) => (u.email || "").toLowerCase() === targetAdmin.toLowerCase());
+          if (found) {
+            await supabase.from("users").upsert([
+              { id: found.id, username: targetAdmin.toLowerCase(), name: "Administrador", password: 'SUPABASE_AUTH', role: 'admin' }
+            ]);
+          }
+          return;
         } else {
           console.error("[SEED] Erro ao criar admin no Auth:", authError.message);
           return;
@@ -120,7 +170,7 @@ export async function createApp() {
       if (authUser?.user) {
         console.log(`[SEED] Admin criado no Auth: ${authUser.user.id}`);
         await supabase.from("users").upsert([
-          { id: authUser.user.id, username: targetAdmin, name: "Administrador", password: 'SUPABASE_AUTH' }
+          { id: authUser.user.id, username: targetAdmin.toLowerCase(), name: "Administrador", password: 'SUPABASE_AUTH', role: 'admin' }
         ]);
         console.log("[SEED] Admin vinculado com sucesso.");
       }
@@ -134,7 +184,10 @@ export async function createApp() {
 
   // Session configuration optimized for Vercel Serverless
   app.set('trust proxy', 1); // trust first proxy
-  const sessionSecret = process.env.SESSION_SECRET_KEY || 'default-fallback-sec-key-imobigestao-1357';
+  const sessionSecret = process.env.SESSION_SECRET_KEY || (process.env.NODE_ENV === 'production' ? '' : 'dev-only-secret-change-me');
+  if (!sessionSecret) {
+    throw new Error("SESSION_SECRET_KEY não configurada. Defina uma chave longa e aleatória nas variáveis de ambiente.");
+  }
   app.use(cookieSession({
     name: 'imobi_session',
     keys: [sessionSecret],
@@ -149,7 +202,7 @@ export async function createApp() {
   });
 
   // File Upload
-  app.post("/api/upload", upload.single("file"), async (req: any, res: any) => {
+  app.post("/api/upload", requireLogin, upload.single("file"), async (req: any, res: any) => {
     try {
       if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
 
@@ -198,11 +251,8 @@ export async function createApp() {
         return res.status(500).json({ error: `Erro no upload: ${error.message}. Certifique-se que o bucket 'documents' existe no Supabase.` });
       }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("documents")
-        .getPublicUrl(filePath);
-
-      res.json({ url: publicUrl });
+      // Bucket privado: o link guardado aponta para a rota segura abaixo (exige login)
+      res.json({ url: `/api/files/${fileName}` });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -255,6 +305,10 @@ export async function createApp() {
 
   // Auth Routes
   app.post("/api/auth/signup", async (req, res) => {
+    // Cadastro aberto desativado por padrão. Para liberar, defina ALLOW_SIGNUP=true no ambiente.
+    if (process.env.ALLOW_SIGNUP !== "true") {
+      return res.status(403).json({ error: "O cadastro de novos usuários está desativado. Solicite acesso ao administrador." });
+    }
     const { email, password, name } = req.body;
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -281,7 +335,14 @@ export async function createApp() {
   });
 
   app.post("/api/auth/login", async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
+    if (typeof username !== "string" || typeof password !== "string" || !username || !password) {
+      return res.status(400).json({ error: "Informe e-mail e senha." });
+    }
+    const attemptKey = loginKey(req, username);
+    if (isLoginBlocked(attemptKey)) {
+      return res.status(429).json({ error: "Muitas tentativas de login. Aguarde alguns minutos e tente novamente." });
+    }
     try {
       // Use the username (which stores the email) for authentication
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -291,19 +352,30 @@ export async function createApp() {
       if (error) throw error;
 
       if (data.user) {
+        loginAttempts.delete(attemptKey);
         // Get user profile from our table using the username
-        const { data: profile } = await supabase.from("users").select("*").eq("username", username).maybeSingle();
+        const loginEmail = (data.user.email || username).toLowerCase();
+        const { data: profile } = await supabase.from("users").select("*").eq("username", loginEmail).maybeSingle();
+        const role = resolveRole(data.user.email, profile?.role);
+
+        // Só entra quem tem perfil na tabela users (autorizado) ou é o administrador principal.
+        // Isso impede que uma conta criada direto no Supabase Auth acesse o sistema.
+        if (!profile && role !== 'admin') {
+          return res.status(403).json({ error: "Seu usuário não tem permissão de acesso. Solicite ao administrador." });
+        }
 
         const userData = {
           id: data.user.id,
           email: data.user.email,
-          name: profile?.name || data.user.user_metadata?.name || "Usuário"
+          name: profile?.name || data.user.user_metadata?.name || "Usuário",
+          role
         };
 
         (req.session as any).user = userData;
         res.json(userData);
       }
     } catch (e: any) {
+      registerLoginFail(attemptKey);
       res.status(401).json({ error: e.message });
     }
   });
@@ -348,7 +420,7 @@ export async function createApp() {
     return response.json();
   };
 
-  app.get("/api/asaas/diagnose", async (req, res) => {
+  app.get("/api/asaas/diagnose", requireAdmin, async (req, res) => {
     try {
       const apiKey = process.env.ASAAS_API_KEY || "";
       const apiUrl = process.env.ASAAS_API_URL || "";
@@ -658,7 +730,7 @@ export async function createApp() {
     }
   });
 
-  app.post("/api/asaas/transfer/:paymentId", async (req, res) => {
+  app.post("/api/asaas/transfer/:paymentId", requireAdmin, async (req, res) => {
     try {
       const { paymentId } = req.params;
       const { data: payment, error } = await supabase
@@ -714,7 +786,7 @@ export async function createApp() {
     }
   });
 
-  app.post("/api/asaas/transfer-broker/:paymentId", async (req, res) => {
+  app.post("/api/asaas/transfer-broker/:paymentId", requireAdmin, async (req, res) => {
     try {
       const { paymentId } = req.params;
       const { data: payment, error } = await supabase
@@ -770,6 +842,10 @@ export async function createApp() {
   app.post("/api/asaas/webhook", express.json(), async (req, res) => {
     try {
       const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
+      if (!webhookToken && process.env.NODE_ENV === 'production') {
+        console.error("[WEBHOOK] ASAAS_WEBHOOK_TOKEN não configurado. Requisição recusada.");
+        return res.status(503).send("Webhook não configurado");
+      }
       if (webhookToken) {
         const headerToken = req.headers['asaas-access-token'];
         if (headerToken !== webhookToken) {
@@ -1398,6 +1474,24 @@ const created = [];
     res.json({ success: true });
   });
 
+  // Download seguro de documentos (bucket privado): exige login e redireciona para um link temporário de 60s
+  app.get("/api/files/:name", async (req, res) => {
+    const { name } = req.params;
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+      return res.status(400).json({ error: "Nome de arquivo inválido." });
+    }
+    try {
+      const { data, error } = await supabase.storage.from("documents").createSignedUrl(`documents/${name}`, 60);
+      if (error || !data?.signedUrl) {
+        return res.status(404).json({ error: "Arquivo não encontrado." });
+      }
+      res.setHeader("Cache-Control", "no-store");
+      res.redirect(302, data.signedUrl);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
@@ -1429,7 +1523,9 @@ const created = [];
           console.error(`Erro ao fazer backup da tabela ${table}:`, error.message);
           backupData[table] = [];
         } else {
-          backupData[table] = data || [];
+          backupData[table] = table === 'users'
+            ? (data || []).map(({ password, ...rest }: any) => rest)
+            : (data || []);
         }
       }
       
@@ -1444,8 +1540,8 @@ const created = [];
     }
   };
 
-  app.get("/api/backup", handleBackup);
-  app.get("/api/backup/download", handleBackup);
+  app.get("/api/backup", requireAdmin, handleBackup);
+  app.get("/api/backup/download", requireAdmin, handleBackup);
 
   const ALLOWED_COLUMNS: Record<string, string[]> = {
     brokers: ['name', 'email', 'phone', 'document', 'pix_key'],
@@ -1472,7 +1568,7 @@ const created = [];
     maintenances: ['property_id', 'description', 'request_date', 'estimated_cost', 'actual_cost', 'status', 'paid_by', 'photos_link']
   };
 
-  app.post("/api/import/:type", express.json(), async (req, res) => {
+  app.post("/api/import/:type", requireAdmin, express.json(), async (req, res) => {
     const { type } = req.params;
     const items = req.body;
     const allowedTypes = Object.keys(ALLOWED_COLUMNS);
@@ -1504,7 +1600,7 @@ const created = [];
     }
   });
 
-  app.get("/api/db-check", async (req, res) => {
+  app.get("/api/db-check", requireAdmin, async (req, res) => {
     const tables = ['brokers', 'owners', 'tenants', 'properties', 'property_owners', 'contracts', 'payments', 'inspections', 'maintenances'];
     const results: any = {};
 
@@ -1517,7 +1613,7 @@ const created = [];
   });
 
   // Delete Endpoints
-  app.delete("/api/:type/:id", async (req, res) => {
+  app.delete("/api/:type/:id", requireAdmin, async (req, res) => {
     const { type, id } = req.params;
     const allowedTypes = ['owners', 'tenants', 'properties', 'contracts', 'payments', 'brokers', 'inspections', 'maintenances'];
 
