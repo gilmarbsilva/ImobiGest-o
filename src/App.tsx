@@ -1567,7 +1567,7 @@ export default function App() {
   // Get queryClient to update user cache on login
   const queryClient = useQueryClient();
 
-  if (!user) return <Auth onLogin={(u) => { queryClient.setQueryData(queryKeys.me, u); fetchData(); }} />;
+  if (!user) return <Auth onLogin={(u) => { queryClient.setQueryData(queryKeys.me, { user: { id: u.id, email: u.email } }); }} />;
 
   return (
     <ToastProvider>
@@ -3835,7 +3835,6 @@ export default function App() {
                             onClick={() => {
                               const enabled = localStorage.getItem('imobi_auto_backup') === 'true';
                               localStorage.setItem('imobi_auto_backup', (!enabled).toString());
-                              fetchData();
                             }}
                             className={`w-12 h-6 rounded-full transition-colors relative ${localStorage.getItem('imobi_auto_backup') === 'true' ? 'bg-emerald-500' : 'bg-slate-300'}`}
                           >
