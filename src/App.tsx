@@ -673,7 +673,7 @@ const FinancialCard = ({ title, value, liquidValue, clients, charges, color, pro
 
 const FileUpload = ({ onUpload, label }: { onUpload: (url: string) => void, label?: string }) => {
   const [uploading, setUploading] = useState(false);
-  const uploadMutation = uploadFileMutation;
+  const uploadMutation = useUploadFile();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
@@ -791,6 +791,33 @@ export default function App() {
   const loading = ownersLoading || tenantsLoading || propertiesLoading || contractsLoading ||
                   paymentsLoading || brokersLoading || inspectionsLoading || maintenancesLoading || userLoading;
 
+  // Filter payments for financial tab (must be before useEffects that depend on it)
+  const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
+    if (ignoreDateFilter) return true;
+
+    // Pegamos apenas a parte da data (YYYY-MM-DD) caso venha com timestamp
+    const dueDate = p.due_date?.substring(0, 10);
+    const receivedDate = p.received_date?.substring(0, 10);
+
+    const isDueInRange = dueDate && dueDate >= reportStartDate && dueDate <= reportEndDate;
+    const isReceivedInRange = receivedDate && receivedDate >= reportStartDate && receivedDate <= reportEndDate;
+
+    return isDueInRange || isReceivedInRange;
+  });
+
+  // Filtragem composta para a tabela financeira — elimina lógica duplicada
+  const displayedPayments = filteredPayments.filter(p => {
+    if (paymentFilterStatus === 'paid') return p.status === 'paid';
+    if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
+    if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
+    if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
+    return true;
+  }).filter(p => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toLowerCase();
+    return p.tenant_name?.toLowerCase().includes(s) || p.address?.toLowerCase().includes(s) || p.owner_name?.toLowerCase().includes(s);
+  });
+
   // Background Sync para faturas do Asaas
   useEffect(() => {
     if (activeTab === 'financial' && filteredPayments.length > 0) {
@@ -857,8 +884,12 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
-    addToast({ title: type === 'success' ? 'Sucesso' : type === 'error' ? 'Erro' : type === 'warning' ? 'Atenção' : 'Informação', message, type });
+  const showToast = (message: string | { title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' }, type?: 'success' | 'error' | 'info' | 'warning') => {
+    if (typeof message === 'string') {
+      addToast({ title: type === 'success' ? 'Sucesso' : type === 'error' ? 'Erro' : type === 'warning' ? 'Atenção' : 'Informação', message, type: type || 'info' });
+    } else {
+      addToast(message);
+    }
   };
 
   // React Query Mutations
@@ -1022,32 +1053,6 @@ export default function App() {
   const uploadFileMutation = useUploadFile({
     onSuccess: (data) => { /* handled in FileUpload */ },
     onError: (e) => addToast({ title: 'Erro', message: `Erro no upload: ${e.message}`, type: 'error' }),
-  });
-
-  const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
-    if (ignoreDateFilter) return true;
-
-    // Pegamos apenas a parte da data (YYYY-MM-DD) caso venha com timestamp
-    const dueDate = p.due_date?.substring(0, 10);
-    const receivedDate = p.received_date?.substring(0, 10);
-
-    const isDueInRange = dueDate && dueDate >= reportStartDate && dueDate <= reportEndDate;
-    const isReceivedInRange = receivedDate && receivedDate >= reportStartDate && receivedDate <= reportEndDate;
-
-    return isDueInRange || isReceivedInRange;
-  });
-
-  // Filtragem composta para a tabela financeira — elimina lógica duplicada
-  const displayedPayments = filteredPayments.filter(p => {
-    if (paymentFilterStatus === 'paid') return p.status === 'paid';
-    if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
-    if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
-    if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
-    return true;
-  }).filter(p => {
-    if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    return p.tenant_name?.toLowerCase().includes(s) || p.address?.toLowerCase().includes(s) || p.owner_name?.toLowerCase().includes(s);
   });
 
   const handleCreateBroker = (e: React.FormEvent<HTMLFormElement>) => {
