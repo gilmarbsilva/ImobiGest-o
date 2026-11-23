@@ -49,7 +49,17 @@ import {
   AlertTriangle,
   Info,
   XCircle,
-  Loader
+  Loader,
+  Copy,
+  Save,
+  FileOutput,
+  FileInput,
+  FilterX,
+  Bookmark,
+  BookmarkCheck,
+  LayoutList,
+  FileCode,
+  Table2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -1293,6 +1303,191 @@ export default function App() {
     generatePaymentsMutation.mutate();
   };
 
+  // ===== PHASE 5: Business Features =====
+
+  // Duplicate Contract
+  const handleDuplicateContract = (contract: Contract) => {
+    if (!confirm('Deseja duplicar este contrato? Um novo contrato será criado com os mesmos dados (exceto datas).')) return;
+
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const endDate = new Date(today.getFullYear() + 1, today.getMonth(), 0).toISOString().split('T')[0];
+
+    const newContract = {
+      property_id: contract.property_id,
+      tenant_id: contract.tenant_id,
+      start_date: startDate,
+      end_date: endDate,
+      rent_value: contract.rent_value,
+      due_day: contract.due_day,
+      admin_tax: contract.admin_tax || 0,
+      adjustment_index: contract.adjustment_index,
+      guarantee_type: contract.guarantee_type || '',
+      guarantee_value: contract.guarantee_value || 0,
+      charges: contract.charges || 0,
+      transfer_value: contract.transfer_value || 0,
+      water_installation: contract.water_installation || '',
+      electricity_installation: contract.electricity_installation || '',
+      gas_installation: contract.gas_installation || '',
+      broker_id: contract.broker_id || null,
+      broker_commission_percent: contract.broker_commission_percent || 0,
+      agency_commission_value: contract.agency_commission_value || 0,
+      iptu_status: contract.iptu_status || 'pending',
+      condo_status: contract.condo_status || 'pending',
+      status: 'ativo' as const,
+      extra_charges: contract.extra_charges || '[]'
+    };
+
+    createContractMutation.mutate(newContract, {
+      onSuccess: (newContractData) => {
+        // Create initial payment
+        const dueDay = contract.due_day || 5;
+        const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
+        if (dueDate < today) dueDate.setMonth(dueDate.getMonth() + 1);
+        createPaymentMutation.mutate({
+          contract_id: newContractData.id,
+          due_date: dueDate.toISOString().split('T')[0],
+          status: 'pending'
+        });
+        showToast({ title: 'Sucesso', message: 'Contrato duplicado com sucesso!', type: 'success' });
+      },
+      onError: (e) => showToast({ title: 'Erro', message: `Erro ao duplicar: ${e.message}`, type: 'error' }),
+    });
+  };
+
+  // Export to CSV
+  const exportToCSV = (data: any[], filename: string, columns: ({ key: string; label: string; transform?: (item: any) => any }[])) => {
+    if (data.length === 0) {
+      showToast({ title: 'Aviso', message: 'Nenhum dado para exportar', type: 'warning' });
+      return;
+    }
+
+    const headers = columns.map(c => c.label).join(',');
+    const rows = data.map(item =>
+      columns.map(c => {
+        const value = c.transform ? c.transform(item) : item[c.key];
+        if (value === null || value === undefined) return '';
+        const str = String(value).replace(/"/g, '""');
+        return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str}"` : str;
+      }).join(',')
+    );
+
+    const csv = [headers, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    showToast({ title: 'Sucesso', message: `${data.length} registros exportados para CSV`, type: 'success' });
+  };
+
+  // Export to PDF (simple HTML-based)
+  const exportToPDF = (data: any[], filename: string, columns: ({ key: string; label: string; transform?: (item: any) => any }[]), title: string) => {
+    if (data.length === 0) {
+      showToast({ title: 'Aviso', message: 'Nenhum dado para exportar', type: 'warning' });
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showToast({ title: 'Erro', message: 'Pop-up bloqueado. Permita pop-ups para exportar PDF.', type: 'error' });
+      return;
+    }
+
+    const tableRows = data.map(item =>
+      '<tr>' + columns.map(c => `<td>${c.transform ? c.transform(item) : (item[c.key] ?? '')}</td>`).join('') + '</tr>'
+    ).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #1e293b; margin-bottom: 10px; }
+          .meta { color: #64748b; font-size: 12px; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
+          th { background: #f1f5f9; font-weight: 700; }
+          tr:nth-child(even) { background: #f8fafc; }
+          @media print { body { padding: 0; } .no-print { display: none; } }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <div class="meta">Gerado em ${new Date().toLocaleString('pt-BR')} | ${data.length} registros</div>
+        <table>
+          <thead><tr>${columns.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 1000); }</script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    showToast({ title: 'Sucesso', message: 'PDF aberto para impressão/salvamento', type: 'success' });
+  };
+
+  // Saved Filters
+  const [savedFilters, setSavedFilters] = useState<Record<string, { name: string; filters: any }>>(() => {
+    try {
+      const stored = localStorage.getItem('imobi_saved_filters');
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
+
+  const [showSavedFiltersModal, setShowSavedFiltersModal] = useState(false);
+  const [newFilterName, setNewFilterName] = useState('');
+
+  const saveCurrentFilters = (tab: string) => {
+    const filters = {
+      searchTerm,
+      paymentFilterStatus,
+      contractStatusFilter,
+      reportStartDate,
+      reportEndDate,
+      repasseOwnerFilter,
+      ignoreDateFilter,
+    };
+    const name = newFilterName || `Filtro ${new Date().toLocaleString('pt-BR')}`;
+    setSavedFilters(prev => {
+      const updated = { ...prev, [tab]: { name, filters } };
+      localStorage.setItem('imobi_saved_filters', JSON.stringify(updated));
+      return updated;
+    });
+    setNewFilterName('');
+    showToast({ title: 'Sucesso', message: 'Filtro salvo com sucesso!', type: 'success' });
+  };
+
+  const applySavedFilter = (tab: string) => {
+    const saved = savedFilters[tab];
+    if (!saved) return;
+    const f = saved.filters;
+    setSearchTerm(f.searchTerm || '');
+    setPaymentFilterStatus(f.paymentFilterStatus || null);
+    setContractStatusFilter(f.contractStatusFilter || 'ativos');
+    setReportStartDate(f.reportStartDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+    setReportEndDate(f.reportEndDate || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+    setRepasseOwnerFilter(f.repasseOwnerFilter || '');
+    setIgnoreDateFilter(f.ignoreDateFilter || false);
+    showToast({ title: 'Sucesso', message: `Filtro "${saved.name}" aplicado`, type: 'success' });
+  };
+
+  const deleteSavedFilter = (tab: string) => {
+    setSavedFilters(prev => {
+      const updated = { ...prev };
+      delete updated[tab];
+      localStorage.setItem('imobi_saved_filters', JSON.stringify(updated));
+      return updated;
+    });
+    showToast({ title: 'Sucesso', message: 'Filtro salvo removido', type: 'success' });
+  };
+
   const handleImportFile = (type: 'owners' | 'tenants' | 'properties', file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1872,6 +2067,57 @@ export default function App() {
 
               {activeTab === 'brokers' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                  {/* Export & Saved Filters */}
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.brokers && (
+                        <button
+                          onClick={() => applySavedFilter('brokers')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.brokers.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.brokers.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filterList(brokers), 'corretores', [
+                          { key: 'name', label: 'Corretor' },
+                          { key: 'email', label: 'Email' },
+                          { key: 'phone', label: 'Telefone' },
+                          { key: 'document', label: 'Documento' },
+                          { key: 'pix_key', label: 'Chave PIX' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar CSV"
+                        aria-label="Exportar CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filterList(brokers), 'corretores', [
+                          { key: 'name', label: 'Corretor' },
+                          { key: 'email', label: 'Email' },
+                          { key: 'phone', label: 'Telefone' },
+                          { key: 'document', label: 'Documento' },
+                          { key: 'pix_key', label: 'Chave PIX' },
+                        ], 'Corretores')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar PDF"
+                        aria-label="Exportar PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-left mobile-cards-table">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
@@ -1923,6 +2169,55 @@ export default function App() {
 
               {activeTab === 'inspections' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                  {/* Export & Saved Filters */}
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.inspections && (
+                        <button
+                          onClick={() => applySavedFilter('inspections')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.inspections.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.inspections.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filterList(inspections), 'vistorias', [
+                          { key: 'address', label: 'Imóvel' },
+                          { key: 'type', label: 'Tipo' },
+                          { key: 'date', label: 'Data' },
+                          { key: 'status', label: 'Status' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar CSV"
+                        aria-label="Exportar CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filterList(inspections), 'vistorias', [
+                          { key: 'address', label: 'Imóvel' },
+                          { key: 'type', label: 'Tipo' },
+                          { key: 'date', label: 'Data' },
+                          { key: 'status', label: 'Status' },
+                        ], 'Vistorias')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar PDF"
+                        aria-label="Exportar PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-left mobile-cards-table">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
@@ -1975,6 +2270,59 @@ export default function App() {
 
               {activeTab === 'maintenances' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                  {/* Export & Saved Filters */}
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.maintenances && (
+                        <button
+                          onClick={() => applySavedFilter('maintenances')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.maintenances.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.maintenances.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filterList(maintenances), 'manutencoes', [
+                          { key: 'address', label: 'Imóvel' },
+                          { key: 'description', label: 'Descrição' },
+                          { key: 'status', label: 'Status' },
+                          { key: 'estimated_cost', label: 'Custo Estimado' },
+                          { key: 'actual_cost', label: 'Custo Real' },
+                          { key: 'paid_by', label: 'Responsável' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar CSV"
+                        aria-label="Exportar CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filterList(maintenances), 'manutencoes', [
+                          { key: 'address', label: 'Imóvel' },
+                          { key: 'description', label: 'Descrição' },
+                          { key: 'status', label: 'Status' },
+                          { key: 'estimated_cost', label: 'Custo Estimado' },
+                          { key: 'actual_cost', label: 'Custo Real' },
+                          { key: 'paid_by', label: 'Responsável' },
+                        ], 'Manutenções')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar PDF"
+                        aria-label="Exportar PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-left mobile-cards-table">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
@@ -2032,6 +2380,59 @@ export default function App() {
 
               {activeTab === 'owners' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                  {/* Export & Saved Filters */}
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.owners && (
+                        <button
+                          onClick={() => applySavedFilter('owners')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.owners.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.owners.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filterList(owners), 'proprietarios', [
+                          { key: 'name', label: 'Proprietário' },
+                          { key: 'email', label: 'Email' },
+                          { key: 'phone', label: 'Telefone' },
+                          { key: 'document', label: 'Documento' },
+                          { key: 'bank_code', label: 'Banco' },
+                          { key: 'pix_key', label: 'Chave PIX' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar CSV"
+                        aria-label="Exportar CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filterList(owners), 'proprietarios', [
+                          { key: 'name', label: 'Proprietário' },
+                          { key: 'email', label: 'Email' },
+                          { key: 'phone', label: 'Telefone' },
+                          { key: 'document', label: 'Documento' },
+                          { key: 'bank_code', label: 'Banco' },
+                          { key: 'pix_key', label: 'Chave PIX' },
+                        ], 'Proprietários')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar PDF"
+                        aria-label="Exportar PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-left mobile-cards-table">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
@@ -2097,6 +2498,57 @@ export default function App() {
 
               {activeTab === 'tenants' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                  {/* Export & Saved Filters */}
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.tenants && (
+                        <button
+                          onClick={() => applySavedFilter('tenants')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.tenants.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.tenants.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filterList(tenants), 'inquilinos', [
+                          { key: 'name', label: 'Inquilino' },
+                          { key: 'email', label: 'Email' },
+                          { key: 'phone', label: 'Telefone' },
+                          { key: 'document', label: 'Documento' },
+                          { key: 'history', label: 'Histórico' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar CSV"
+                        aria-label="Exportar CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filterList(tenants), 'inquilinos', [
+                          { key: 'name', label: 'Inquilino' },
+                          { key: 'email', label: 'Email' },
+                          { key: 'phone', label: 'Telefone' },
+                          { key: 'document', label: 'Documento' },
+                          { key: 'history', label: 'Histórico' },
+                        ], 'Inquilinos')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar PDF"
+                        aria-label="Exportar PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-left mobile-cards-table">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
@@ -2171,6 +2623,65 @@ export default function App() {
 
               {activeTab === 'properties' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                  {/* Export & Saved Filters */}
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.properties && (
+                        <button
+                          onClick={() => applySavedFilter('properties')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.properties.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.properties.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filterList(properties), 'imoveis', [
+                          { key: 'address', label: 'Endereço' },
+                          { key: 'address_complement', label: 'Complemento' },
+                          { key: 'identification', label: 'Identificação' },
+                          { key: 'type', label: 'Tipo' },
+                          { key: 'size', label: 'Tamanho (m²)' },
+                          { key: 'rooms', label: 'Quartos' },
+                          { key: 'bathrooms', label: 'Banheiros' },
+                          { key: 'usage_type', label: 'Uso' },
+                          { key: 'owner_name', label: 'Proprietário' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar CSV"
+                        aria-label="Exportar CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filterList(properties), 'imoveis', [
+                          { key: 'address', label: 'Endereço' },
+                          { key: 'address_complement', label: 'Complemento' },
+                          { key: 'identification', label: 'Identificação' },
+                          { key: 'type', label: 'Tipo' },
+                          { key: 'size', label: 'Tamanho (m²)' },
+                          { key: 'rooms', label: 'Quartos' },
+                          { key: 'bathrooms', label: 'Banheiros' },
+                          { key: 'usage_type', label: 'Uso' },
+                          { key: 'owner_name', label: 'Proprietário' },
+                        ], 'Imóveis')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar PDF"
+                        aria-label="Exportar PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
+                      </button>
+                    </div>
+                  </div>
                   <table className="w-full text-left mobile-cards-table">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
@@ -2284,6 +2795,60 @@ export default function App() {
                       ))}
                     </div>
 
+                    {/* Export & Saved Filters */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {savedFilters.contracts && (
+                          <button
+                            onClick={() => applySavedFilter('contracts')}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                            title={`Aplicar: ${savedFilters.contracts.name}`}
+                          >
+                            <BookmarkCheck size={14} />
+                            <span>{savedFilters.contracts.name}</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => exportToCSV(filteredContracts, 'contratos', [
+                            { key: 'address', label: 'Imóvel' },
+                            { key: 'tenant_name', label: 'Inquilino' },
+                            { key: 'rent_value', label: 'Aluguel' },
+                            { key: 'start_date', label: 'Início' },
+                            { key: 'end_date', label: 'Fim' },
+                            { key: 'due_day', label: 'Dia Venc.' },
+                          ])}
+                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                          title="Exportar CSV"
+                          aria-label="Exportar CSV"
+                        >
+                          <FileSpreadsheet size={18} className="text-emerald-600" />
+                        </button>
+                        <button
+                          onClick={() => exportToPDF(filteredContracts, 'contratos', [
+                            { key: 'address', label: 'Imóvel' },
+                            { key: 'tenant_name', label: 'Inquilino' },
+                            { key: 'rent_value', label: 'Aluguel' },
+                            { key: 'start_date', label: 'Início' },
+                            { key: 'end_date', label: 'Fim' },
+                            { key: 'due_day', label: 'Dia Venc.' },
+                          ], 'Contratos')}
+                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                          title="Exportar PDF"
+                          aria-label="Exportar PDF"
+                        >
+                          <FileText size={18} className="text-rose-600" />
+                        </button>
+                        <button
+                          onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                          title="Salvar filtros atuais"
+                          aria-label="Salvar filtros"
+                        >
+                          <Bookmark size={18} className="text-blue-600" />
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
                       <table className="w-full text-left mobile-cards-table">
                         <thead className="bg-slate-50/50 border-b border-slate-100">
@@ -2349,6 +2914,7 @@ export default function App() {
                                 <td className="px-8 py-5" data-label="Ações">
                                   <div className="flex space-x-2">
                                     <button onClick={(e) => { e.stopPropagation(); setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar contrato"><Settings size={18} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDuplicateContract(c); }} className="p-2 text-amber-500 hover:bg-amber-50 rounded-xl transition-all" aria-label="Duplicar contrato" title="Duplicar Contrato"><Copy size={18} /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleDelete('contracts', c.id, c); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir contrato"><Trash2 size={18} /></button>
                                     <button
                                       onClick={(e) => {
@@ -2385,13 +2951,13 @@ export default function App() {
                       <h2 className="text-3xl font-black text-slate-800 tracking-tight">Situação das cobranças</h2>
                       <p className="text-slate-500 font-medium">Gestão financeira em tempo real</p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
                       <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
                         <button className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold flex items-center gap-2">
                           <Calendar size={16} />
                           Este mês
                         </button>
-                        <button 
+                        <button
                           onClick={() => setShowFinancialFilters(!showFinancialFilters)}
                           className={`px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${showFinancialFilters ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
                         >
@@ -2399,6 +2965,62 @@ export default function App() {
                           Filtros
                         </button>
                       </div>
+
+                      {/* Saved Filters Dropdown */}
+                      {savedFilters.financial && (
+                        <div className="relative">
+                          <button
+                            onClick={() => applySavedFilter('financial')}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                            title={`Aplicar: ${savedFilters.financial.name}`}
+                          >
+                            <BookmarkCheck size={14} />
+                            <span>{savedFilters.financial.name}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => exportToCSV(displayedPayments, 'cobrancas', [
+                            { key: 'tenant_name', label: 'Inquilino' },
+                            { key: 'address', label: 'Endereço' },
+                            { key: 'due_date', label: 'Vencimento' },
+                            { key: 'asaas_status', label: 'Status Asaas' },
+                            { key: 'amount_paid', label: 'Valor' },
+                            { key: 'status', label: 'Status' },
+                          ])}
+                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                          title="Exportar CSV"
+                          aria-label="Exportar CSV"
+                        >
+                          <FileSpreadsheet size={18} className="text-emerald-600" />
+                        </button>
+                        <button
+                          onClick={() => exportToPDF(displayedPayments, 'cobrancas', [
+                            { key: 'tenant_name', label: 'Inquilino' },
+                            { key: 'address', label: 'Endereço' },
+                            { key: 'due_date', label: 'Vencimento' },
+                            { key: 'asaas_status', label: 'Status Asaas' },
+                            { key: 'amount_paid', label: 'Valor' },
+                            { key: 'status', label: 'Status' },
+                          ], 'Cobranças')}
+                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                          title="Exportar PDF"
+                          aria-label="Exportar PDF"
+                        >
+                          <FileText size={18} className="text-rose-600" />
+                        </button>
+                        <button
+                          onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                          title="Salvar filtros atuais"
+                          aria-label="Salvar filtros"
+                        >
+                          <Bookmark size={18} className="text-blue-600" />
+                        </button>
+                      </div>
+
                       <button
                         onClick={handleGeneratePayments}
                         className="flex items-center space-x-2 bg-emerald-500 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 font-bold active:scale-95"
@@ -2802,6 +3424,90 @@ export default function App() {
                       >
                         <Printer size={18} />
                         <span>Imprimir Tudo</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Export & Saved Filters */}
+                  <div className="bg-white p-4 rounded-3xl border border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 print:hidden">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {savedFilters.reports && (
+                        <button
+                          onClick={() => applySavedFilter('reports')}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                          title={`Aplicar: ${savedFilters.reports.name}`}
+                        >
+                          <BookmarkCheck size={14} />
+                          <span>{savedFilters.reports.name}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => exportToCSV(filteredPayments, 'relatorio-financeiro', [
+                          { key: 'tenant_name', label: 'Inquilino' },
+                          { key: 'address', label: 'Endereço' },
+                          { key: 'due_date', label: 'Vencimento' },
+                          { key: 'amount_paid', label: 'Valor Pago' },
+                          { key: 'status', label: 'Status' },
+                          { key: 'transfer_status', label: 'Repasse' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar Financeiro CSV"
+                        aria-label="Exportar Financeiro CSV"
+                      >
+                        <FileSpreadsheet size={18} className="text-emerald-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToPDF(filteredPayments, 'relatorio-financeiro', [
+                          { key: 'tenant_name', label: 'Inquilino' },
+                          { key: 'address', label: 'Endereço' },
+                          { key: 'due_date', label: 'Vencimento' },
+                          { key: 'amount_paid', label: 'Valor Pago' },
+                          { key: 'status', label: 'Status' },
+                          { key: 'transfer_status', label: 'Repasse' },
+                        ], 'Relatório Financeiro')}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar Financeiro PDF"
+                        aria-label="Exportar Financeiro PDF"
+                      >
+                        <FileText size={18} className="text-rose-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToCSV(filteredContracts, 'relatorio-contratos', [
+                          { key: 'address', label: 'Imóvel' },
+                          { key: 'tenant_name', label: 'Inquilino' },
+                          { key: 'rent_value', label: 'Aluguel' },
+                          { key: 'start_date', label: 'Início' },
+                          { key: 'end_date', label: 'Fim' },
+                          { key: 'due_day', label: 'Dia Venc.' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar Contratos CSV"
+                        aria-label="Exportar Contratos CSV"
+                      >
+                        <FileCode size={18} className="text-blue-600" />
+                      </button>
+                      <button
+                        onClick={() => exportToCSV(filterList(properties), 'relatorio-imoveis', [
+                          { key: 'address', label: 'Endereço' },
+                          { key: 'address_complement', label: 'Complemento' },
+                          { key: 'identification', label: 'Identificação' },
+                          { key: 'type', label: 'Tipo' },
+                          { key: 'size', label: 'Tamanho (m²)' },
+                          { key: 'owner_name', label: 'Proprietário' },
+                        ])}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Exportar Imóveis CSV"
+                        aria-label="Exportar Imóveis CSV"
+                      >
+                        <Table2 size={18} className="text-purple-600" />
+                      </button>
+                      <button
+                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                        title="Salvar filtros atuais"
+                        aria-label="Salvar filtros"
+                      >
+                        <Bookmark size={18} className="text-blue-600" />
                       </button>
                     </div>
                   </div>
@@ -4376,6 +5082,65 @@ export default function App() {
               </button>
             </div>
 
+            {/* Export & Saved Filters */}
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                {savedFilters.repasse && (
+                  <button
+                    onClick={() => applySavedFilter('repasse')}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
+                    title={`Aplicar: ${savedFilters.repasse.name}`}
+                  >
+                    <BookmarkCheck size={14} />
+                    <span>{savedFilters.repasse.name}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => exportToCSV(
+                    (Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid' && p.transfer_status === 'pending'),
+                    'repasses-pendentes',
+                    [
+                      { key: 'owner?.name', label: 'Proprietário', transform: (p) => owners.find(o => o.id === properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.owner_id)?.name || '-' },
+                      { key: 'address', label: 'Imóvel', transform: (p) => properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.address || '-' },
+                      { key: 'received_date', label: 'Data Receb.', transform: (p) => formatDate(p.received_date) },
+                      { key: 'transfer_amount', label: 'Valor Líquido', transform: (p) => `R$ ${p.transfer_amount?.toLocaleString('pt-BR')}` },
+                    ]
+                  )}
+                  className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                  title="Exportar CSV"
+                  aria-label="Exportar CSV"
+                >
+                  <FileSpreadsheet size={18} className="text-emerald-600" />
+                </button>
+                <button
+                  onClick={() => exportToPDF(
+                    (Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid' && p.transfer_status === 'pending'),
+                    'repasses-pendentes',
+                    [
+                      { key: 'owner?.name', label: 'Proprietário', transform: (p) => owners.find(o => o.id === properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.owner_id)?.name || '-' },
+                      { key: 'address', label: 'Imóvel', transform: (p) => properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.address || '-' },
+                      { key: 'received_date', label: 'Data Receb.', transform: (p) => formatDate(p.received_date) },
+                      { key: 'transfer_amount', label: 'Valor Líquido', transform: (p) => `R$ ${p.transfer_amount?.toLocaleString('pt-BR')}` },
+                    ],
+                    'Repasses Pendentes'
+                  )}
+                  className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                  title="Exportar PDF"
+                  aria-label="Exportar PDF"
+                >
+                  <FileText size={18} className="text-rose-600" />
+                </button>
+                <button
+                  onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
+                  className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                  title="Salvar filtros atuais"
+                  aria-label="Salvar filtros"
+                >
+                  <Bookmark size={18} className="text-blue-600" />
+                </button>
+              </div>
+            </div>
+
             <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
               <table className="w-full text-left mobile-cards-table">
                 <thead className="bg-white border-b border-slate-200">
@@ -4571,6 +5336,53 @@ export default function App() {
                   onUpload={(file) => handleImportFile('properties', file)}
                   fields="address, type, size, rooms, bathrooms, garage_spaces, pets_allowed, usage_type, owner_id"
                 />
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Saved Filters Modal */}
+      {showSavedFiltersModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold">Salvar Filtros Atuais</h3>
+              <button onClick={() => setShowSavedFiltersModal(false)} className="text-slate-400 hover:text-slate-600">
+                <Plus className="rotate-45" size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-slate-500 text-sm">Dê um nome para este conjunto de filtros para reutilizá-lo depois.</p>
+
+              <input
+                type="text"
+                value={newFilterName}
+                onChange={(e) => setNewFilterName(e.target.value)}
+                placeholder="Ex: Meus filtros padrão, Vencidas este mês, etc."
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                autoFocus
+              />
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowSavedFiltersModal(false)}
+                  className="flex-1 py-3 px-4 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => { saveCurrentFilters(activeTab); setShowSavedFiltersModal(false); }}
+                  disabled={!newFilterName.trim()}
+                  className="flex-1 py-3 px-4 bg-emerald-500 text-white rounded-xl font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Salvar
+                </button>
               </div>
             </div>
           </motion.div>
