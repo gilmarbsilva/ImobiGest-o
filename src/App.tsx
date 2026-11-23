@@ -86,6 +86,7 @@ import {
   useCreateMaintenance, useUpdateMaintenance, useDeleteMaintenance,
   useCreateSubscription, useCheckSubscription,
   useImportData, useUploadFile,
+  queryKeys,
 } from './hooks';
 
 // ===== NEW UI COMPONENTS (Phase 1) =====
@@ -1563,7 +1564,10 @@ export default function App() {
     </div>
   );
 
-  if (!user) return <Auth onLogin={(u) => { setUser(u); fetchData(); }} />;
+  // Get queryClient to update user cache on login
+  const queryClient = useQueryClient();
+
+  if (!user) return <Auth onLogin={(u) => { queryClient.setQueryData(queryKeys.me, u); fetchData(); }} />;
 
   return (
     <ToastProvider>
