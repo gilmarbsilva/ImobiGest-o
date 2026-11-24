@@ -785,9 +785,16 @@ export default function App() {
   const { data: brokers = [], isLoading: brokersLoading } = useBrokers();
   const { data: inspections = [], isLoading: inspectionsLoading } = useInspections();
   const { data: maintenances = [], isLoading: maintenancesLoading } = useMaintenances();
-  const { data: user, isLoading: userLoading } = useMe();
+  const { data: user, isLoading: userLoading, error: userError } = useMe();
   const { data: dbStatus } = useDbStatus();
   const logoutMutation = useLogout();
+
+  // Check if Supabase is misconfigured (common cause of blank screen)
+  const isSupabaseError = userError && (
+    userError.message?.includes('supabaseUrl is required') ||
+    userError.message?.includes('Failed to fetch') ||
+    userError.message?.includes('NetworkError')
+  );
 
   const loading = ownersLoading || tenantsLoading || propertiesLoading || contractsLoading ||
                   paymentsLoading || brokersLoading || inspectionsLoading || maintenancesLoading || userLoading;
@@ -1563,6 +1570,40 @@ export default function App() {
       <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
+
+  // Show friendly error if Supabase is not configured (prevents blank blue screen)
+  if (isSupabaseError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <div className="glass-card w-full max-w-md p-10 text-center space-y-6">
+          <div className="w-20 h-20 mx-auto bg-amber-100 rounded-full flex items-center justify-center">
+            <AlertTriangle size={40} className="text-amber-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Supabase não configurado</h1>
+            <p className="text-slate-500 mt-2">O aplicativo precisa das credenciais do Supabase para funcionar.</p>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-left space-y-3">
+            <p className="font-semibold text-amber-800">Como resolver:</p>
+            <ol className="text-sm text-amber-700 space-y-2 list-decimal list-inside">
+              <li>Vá no <strong>Vercel Dashboard</strong> → Settings → Environment Variables</li>
+              <li>Adicione: <code className="bg-amber-100 px-1 rounded">SUPABASE_URL</code></li>
+              <li>Adicione: <code className="bg-amber-100 px-1 rounded">SUPABASE_ANON_KEY</code></li>
+              <li>Adicione: <code className="bg-amber-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code></li>
+              <li>Faça novo deploy (Redeploy)</li>
+            </ol>
+            <p className="text-xs text-amber-500 mt-3">Para desenvolvimento local, crie arquivo <code>.env</code> na raiz com essas variáveis.</p>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Get queryClient to update user cache on login
   const queryClient = useQueryClient();
