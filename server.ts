@@ -1496,7 +1496,7 @@ const created = [];
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: { port: 24679 } },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -1642,8 +1642,18 @@ const isDirectRun = !process.env.VERCEL;
 if (isDirectRun) {
   createApp().then(app => {
     const PORT = Number(process.env.PORT) || 3000;
-    app.listen(PORT, "0.0.0.0", () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
+    });
+    server.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`[ERROR] Porta ${PORT} já está em uso. Tentando porta ${PORT + 1}...`);
+        app.listen(PORT + 1, "0.0.0.0", () => {
+          console.log(`Server running on http://localhost:${PORT + 1}`);
+        });
+      } else {
+        console.error("[ERROR] Erro ao iniciar servidor:", err);
+      }
     });
   });
 }
