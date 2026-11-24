@@ -785,16 +785,13 @@ export default function App() {
   const { data: brokers = [], isLoading: brokersLoading } = useBrokers();
   const { data: inspections = [], isLoading: inspectionsLoading } = useInspections();
   const { data: maintenances = [], isLoading: maintenancesLoading } = useMaintenances();
-  const { data: user, isLoading: userLoading, error: userError } = useMe();
+  const { data: user, isLoading: userLoading, error: userError, isError: userIsError } = useMe();
   const { data: dbStatus } = useDbStatus();
   const logoutMutation = useLogout();
 
   // Check if Supabase is misconfigured (common cause of blank screen)
-  const isSupabaseError = userError && (
-    userError.message?.includes('supabaseUrl is required') ||
-    userError.message?.includes('Failed to fetch') ||
-    userError.message?.includes('NetworkError')
-  );
+  // More aggressive detection - ANY error on user query likely means config issue
+  const isSupabaseError = userIsError || (userError != null);
 
   const loading = ownersLoading || tenantsLoading || propertiesLoading || contractsLoading ||
                   paymentsLoading || brokersLoading || inspectionsLoading || maintenancesLoading || userLoading;
@@ -848,6 +845,9 @@ export default function App() {
     } else if (!userLoading) {
       setAuthChecked(true);
     }
+    // Safety timeout - force auth check after 10s to prevent infinite loading
+    const timeout = setTimeout(() => setAuthChecked(true), 10000);
+    return () => clearTimeout(timeout);
   }, [user, userLoading]);
 
   const handlePrint = (type: typeof printType) => {
