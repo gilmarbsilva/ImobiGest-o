@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   UserCheck,
@@ -42,24 +42,7 @@ import {
   Loader2,
   Menu,
   X,
-  Eye,
-  Check,
-  ChevronUp,
-  Circle,
-  AlertTriangle,
-  Info,
-  XCircle,
-  Loader,
-  Copy,
-  Save,
-  FileOutput,
-  FileInput,
-  FilterX,
-  Bookmark,
-  BookmarkCheck,
-  LayoutList,
-  FileCode,
-  Table2
+  Eye
 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -70,524 +53,6 @@ import {
 import { Owner, Tenant, Property, Contract, Payment, Broker, Inspection, Maintenance } from './types';
 import Auth from './Auth';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-// React Query hooks
-import {
-  useOwners, useTenants, useProperties, useContracts, usePayments,
-  useBrokers, useInspections, useMaintenances,
-  useMe, useLogout, useDbStatus,
-  useCreateOwner, useUpdateOwner, useDeleteOwner,
-  useCreateTenant, useUpdateTenant, useDeleteTenant, useSyncAsaasTenant,
-  useCreateProperty, useUpdateProperty, useDeleteProperty,
-  useCreateContract, useUpdateContract, useDeleteContract, useRenewContract, useGeneratePayments,
-  useCreatePayment, useUpdatePayment, useDeletePayment, useCheckAsaasPayment, useCreateAsaasPayment, useTransferPayment, useTransferBroker,
-  useCreateBroker, useUpdateBroker, useDeleteBroker,
-  useCreateInspection, useUpdateInspection, useDeleteInspection,
-  useCreateMaintenance, useUpdateMaintenance, useDeleteMaintenance,
-  useCreateSubscription, useCheckSubscription,
-  useImportData, useUploadFile,
-  queryKeys,
-} from './hooks';
-
-// ===== NEW UI COMPONENTS (Phase 1) =====
-
-// Toast System
-interface Toast {
-  id: string;
-  type: 'success' | 'error' | 'info' | 'warning';
-  title: string;
-  message?: string;
-  action?: { label: string; onClick: () => void };
-  duration?: number;
-}
-
-const ToastContext = React.createContext<{
-  toasts: Toast[];
-  addToast: (toast: Omit<Toast, 'id'>) => string;
-  removeToast: (id: string) => void;
-} | null>(null);
-
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const addToast = (toast: Omit<Toast, 'id'>) => {
-    const id = Math.random().toString(36).slice(2);
-    const newToast = { ...toast, id, duration: toast.duration ?? 5000 };
-    setToasts(prev => [...prev, newToast]);
-    if (newToast.duration && newToast.duration > 0) {
-      setTimeout(() => removeToast(id), newToast.duration);
-    }
-    return id;
-  };
-
-  const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-
-  return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
-      {children}
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </ToastContext.Provider>
-  );
-}
-
-export function useToast() {
-  const context = React.useContext(ToastContext);
-  if (!context) throw new Error('useToast must be used within ToastProvider');
-  return context;
-}
-
-function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
-  return (
-    <div className="toast-container" role="region" aria-live="polite" aria-label="Notificações">
-      {toasts.map(toast => (
-        <motion.div
-          key={toast.id}
-          initial={{ opacity: 0, x: 100 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 100 }}
-          className={`toast toast-${toast.type}`}
-          role="alert"
-        >
-          <div className="toast-content">
-            <div className="toast-title">{toast.title}</div>
-            {toast.message && <div className="toast-message">{toast.message}</div>}
-            {toast.action && (
-              <button
-                onClick={() => { toast.action.onClick(); onRemove(toast.id); }}
-                className="toast-action text-sm font-semibold underline decoration-2 underline-offset-2 hover:opacity-80"
-              >
-                {toast.action.label}
-              </button>
-            )}
-          </div>
-          <button onClick={() => onRemove(toast.id)} className="toast-close" aria-label="Fechar">
-            <X size={16} />
-          </button>
-          {toast.duration && toast.duration > 0 && (
-            <motion.div
-              className="toast-progress"
-              initial={{ scaleX: 1 }}
-              animate={{ scaleX: 0 }}
-              transition={{ duration: toast.duration / 1000, ease: 'linear' }}
-            />
-          )}
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-// Loading Button
-interface LoadingButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  loading?: boolean;
-  children: React.ReactNode;
-}
-
-const LoadingButton = React.forwardRef<HTMLButtonElement, LoadingButtonProps>(
-  ({ loading, children, disabled, className = '', ...props }, ref) => (
-    <button
-      ref={ref}
-      disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all
-        ${loading ? 'opacity-75 cursor-wait' : ''}
-        ${className}`}
-      {...props}
-    >
-      {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-      {!loading && props.children?.props?.icon && <props.children.props.icon />}
-      <span>{loading ? 'Processando...' : children}</span>
-    </button>
-  )
-);
-LoadingButton.displayName = 'LoadingButton';
-
-// Combobox / Searchable Select
-interface ComboboxOption {
-  value: string | number;
-  label: string;
-  group?: string;
-  disabled?: boolean;
-}
-
-interface ComboboxProps {
-  name: string;
-  value: string | number | '';
-  onChange: (value: string | number | '') => void;
-  options: ComboboxOption[];
-  placeholder?: string;
-  required?: boolean;
-  disabled?: boolean;
-  className?: string;
-  label?: string;
-  error?: string;
-  onSearch?: (query: string) => void;
-}
-
-function Combobox({
-  name,
-  value,
-  onChange,
-  options,
-  placeholder = 'Selecione...',
-  required,
-  disabled,
-  className = '',
-  label,
-  error,
-  onSearch
-}: ComboboxProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const optionsRef = useRef<HTMLDivElement>(null);
-
-  // Group options by group property
-  const groupedOptions = useMemo(() => {
-    const groups: Record<string, ComboboxOption[]> = {};
-    options.forEach(opt => {
-      const group = opt.group || 'Outros';
-      if (!groups[group]) groups[group] = [];
-      groups[group].push(opt);
-    });
-    return groups;
-  }, [options]);
-
-  // Filter options based on search
-  const filteredGroups = useMemo(() => {
-    if (!searchQuery) return groupedOptions;
-    const filtered: Record<string, ComboboxOption[]> = {};
-    Object.entries(groupedOptions).forEach(([group, opts]) => {
-      const filteredOpts = opts.filter(opt =>
-        opt.label.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      if (filteredOpts.length > 0) filtered[group] = filteredOpts;
-    });
-    return filtered;
-  }, [groupedOptions, searchQuery]);
-
-  const totalFilteredOptions = Object.values(filteredGroups).reduce((sum, opts) => sum + opts.length, 0);
-
-  // Handle click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
-          optionsRef.current && !optionsRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-        setSearchQuery('');
-        setHighlightedIndex(-1);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Keyboard navigation
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const optionCount = totalFilteredOptions;
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          setHighlightedIndex(prev => Math.min(prev + 1, optionCount - 1));
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setHighlightedIndex(prev => Math.max(prev - 1, -1));
-          break;
-        case 'Enter':
-          e.preventDefault();
-          if (highlightedIndex >= 0) {
-            let idx = 0;
-            for (const group of Object.values(filteredGroups)) {
-              if (idx + group.length > highlightedIndex) {
-                const opt = group[highlightedIndex - idx];
-                onChange(opt.value);
-                setIsOpen(false);
-                setSearchQuery('');
-                setHighlightedIndex(-1);
-                break;
-              }
-              idx += group.length;
-            }
-          }
-          break;
-        case 'Escape':
-          setIsOpen(false);
-          setSearchQuery('');
-          setHighlightedIndex(-1);
-          break;
-        case 'Tab':
-          setIsOpen(false);
-          setSearchQuery('');
-          setHighlightedIndex(-1);
-          break;
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, filteredGroups, highlightedIndex, onChange]);
-
-  const selectedOption = options.find(o => o.value === value);
-  const flatOptions = Object.values(filteredGroups).flat();
-
-  return (
-    <div className={`form-field ${className}`}>
-      {label && <label className="form-label">{label}</label>}
-      <div className="combobox relative" ref={triggerRef}>
-        <button
-          type="button"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
-          disabled={disabled}
-          className={`combobox-trigger ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${error ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-500' : ''}`}
-          aria-expanded={isOpen}
-          aria-haspopup="listbox"
-          aria-label={label}
-        >
-          <span className={selectedOption ? 'text-slate-900' : 'text-slate-400'}>
-            {selectedOption?.label || placeholder}
-          </span>
-          <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
-
-        <input type="hidden" name={name} value={value || ''} />
-
-        {isOpen && (
-          <div className="combobox-options" ref={optionsRef} role="listbox" aria-label={label}>
-            <input
-              type="text"
-              className="combobox-search"
-              placeholder="Buscar..."
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setHighlightedIndex(-1); onSearch?.(e.target.value); }}
-              onClick={e => e.stopPropagation()}
-              autoFocus
-            />
-            {totalFilteredOptions === 0 ? (
-              <div className="combobox-empty">Nenhuma opção encontrada</div>
-            ) : (
-              Object.entries(filteredGroups).map(([group, opts]) => (
-                <div key={group}>
-                  <div className="combobox-group">{group}</div>
-                  {opts.map((opt, i) => {
-                    const flatIdx = flatOptions.indexOf(opt);
-                    const isHighlighted = flatIdx === highlightedIndex;
-                    const isSelected = opt.value === value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        role="option"
-                        aria-selected={isSelected}
-                        aria-disabled={opt.disabled}
-                        data-selected={isSelected}
-                        className={`combobox-option ${isHighlighted ? 'bg-slate-100' : ''} ${opt.disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        onClick={() => !opt.disabled && (onChange(opt.value), setIsOpen(false), setSearchQuery(''), setHighlightedIndex(-1))}
-                        onMouseEnter={() => setHighlightedIndex(flatIdx)}
-                        disabled={opt.disabled}
-                      >
-                        {isSelected && <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
-                        <span className={isSelected ? 'font-medium' : ''}>{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-      {error && <p className="form-error"><XCircle size={14} /> {error}</p>}
-    </div>
-  );
-}
-
-// Delete Confirm Modal
-interface DeleteConfirmModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  description: string;
-  itemDetails: { label: string; value: string }[];
-  loading?: boolean;
-  variant?: 'warning' | 'danger';
-}
-
-function DeleteConfirmModal({ isOpen, onClose, onConfirm, title, description, itemDetails, loading, variant = 'danger' }: DeleteConfirmModalProps) {
-  if (!isOpen) return null;
-
-  return (
-    <>
-      <motion.div
-        className="delete-modal-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-      />
-      <motion.div className="delete-modal" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
-        <div className={`delete-modal-icon ${variant === 'danger' ? 'delete-modal-icon-danger' : 'delete-modal-icon-warning'}`}>
-          {variant === 'danger' ? <AlertTriangle size={28} /> : <Info size={28} />}
-        </div>
-        <h3 className="delete-modal-title">{title}</h3>
-        <p className="delete-modal-description">{description}</p>
-        <div className="delete-modal-item">
-          {itemDetails.map((detail, i) => (
-            <div key={i} className="mb-3 last:mb-0">
-              <div className="delete-modal-item-label">{detail.label}</div>
-              <div className="delete-modal-item-value">{detail.value}</div>
-            </div>
-          ))}
-        </div>
-        <div className="delete-modal-actions">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            className="delete-modal-btn delete-modal-btn-cancel"
-          >
-            Cancelar
-          </button>
-          <LoadingButton
-            onClick={onConfirm}
-            loading={loading}
-            className="delete-modal-btn delete-modal-btn-confirm"
-          >
-            {variant === 'danger' ? 'Excluir' : 'Confirmar'}
-          </LoadingButton>
-        </div>
-      </motion.div>
-    </>
-  );
-}
-
-// Form Field Wrapper (consistent styling)
-interface FormFieldProps {
-  label: string;
-  required?: boolean;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-  className?: string;
-}
-
-function FormField({ label, required, error, hint, children, className = '' }: FormFieldProps) {
-  return (
-    <div className={`form-field ${className}`}>
-      <label className={`form-label ${required ? 'form-label-required' : ''}`}>{label}</label>
-      {children}
-      {error && <p className="form-error"><XCircle size={14} /> {error}</p>}
-      {hint && !error && <p className="form-hint">{hint}</p>}
-    </div>
-  );
-}
-
-// Empty State
-interface EmptyStateProps {
-  icon: React.ReactNode;
-  title: string;
-  description?: string;
-  action?: React.ReactNode;
-  className?: string;
-}
-
-function EmptyState({ icon, title, description, action, className = '' }: EmptyStateProps) {
-  return (
-    <div className={`empty-state ${className}`}>
-      <div className="empty-state-icon">{icon}</div>
-      <h3 className="empty-state-title">{title}</h3>
-      {description && <p className="empty-state-description">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
-    </div>
-  );
-}
-
-// Table Empty State - for use inside table tbody
-interface TableEmptyStateProps {
-  colSpan: number;
-  icon: React.ReactNode;
-  title: string;
-  description?: string;
-  action?: React.ReactNode;
-}
-
-function TableEmptyState({ colSpan, icon, title, description, action }: TableEmptyStateProps) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="px-8 py-16 text-center">
-        <div className="empty-state">
-          <div className="empty-state-icon">{icon}</div>
-          <h3 className="empty-state-title">{title}</h3>
-          {description && <p className="empty-state-description">{description}</p>}
-          {action && <div className="mt-4">{action}</div>}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-// Mobile Card Wrapper for Tables
-interface MobileCardTableProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-function MobileCardTable({ children, className = '' }: MobileCardTableProps) {
-  return (
-    <div className={`mobile-cards-table ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-// Bottom Sheet Mobile
-interface BottomSheetProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-}
-
-function BottomSheet({ isOpen, onClose, title, children, className = '' }: BottomSheetProps) {
-  if (!isOpen) return null;
-
-  return (
-    <>
-      <motion.div
-        className="bottom-sheet-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-      />
-      <motion.div
-        className={`bottom-sheet ${className}`}
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bottom-sheet-title"
-      >
-        <div className="bottom-sheet-handle" />
-        <div className="bottom-sheet-header">
-          <h2 id="bottom-sheet-title" className="bottom-sheet-title">{title}</h2>
-          <button onClick={onClose} className="bottom-sheet-close" aria-label="Fechar">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="bottom-sheet-content">
-          {children}
-        </div>
-      </motion.div>
-    </>
-  );
-}
 
 const FinancialCard = ({ title, value, liquidValue, clients, charges, color, progress, onClick, isActive }: any) => {
   const colors: any = {
@@ -674,21 +139,25 @@ const FinancialCard = ({ title, value, liquidValue, clients, charges, color, pro
 
 const FileUpload = ({ onUpload, label }: { onUpload: (url: string) => void, label?: string }) => {
   const [uploading, setUploading] = useState(false);
-  const uploadMutation = useUploadFile();
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
-    const file = e.target.files[0];
     setUploading(true);
-    uploadMutation.mutate(file, {
-      onSuccess: (data) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', e.target.files[0]);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
         onUpload(data.url);
-        setUploading(false);
-      },
-      onError: () => {
-        setUploading(false);
-      },
-    });
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (e) {
+      alert('Erro ao conectar com o servidor.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -698,12 +167,12 @@ const FileUpload = ({ onUpload, label }: { onUpload: (url: string) => void, labe
         <input
           type="file"
           onChange={handleChange}
-          disabled={uploading || uploadMutation.isPending}
+          disabled={uploading}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
         />
-        <div className={`p-4 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${uploading || uploadMutation.isPending ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200 group-hover:border-emerald-500 group-hover:bg-emerald-50'
+        <div className={`p-4 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${uploading ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200 group-hover:border-emerald-500 group-hover:bg-emerald-50'
           }`}>
-          {uploading || uploadMutation.isPending ? (
+          {uploading ? (
             <div className="flex items-center space-x-2 text-slate-500">
               <RefreshCw className="animate-spin" size={20} />
               <span className="text-sm">Enviando...</span>
@@ -722,6 +191,15 @@ const FileUpload = ({ onUpload, label }: { onUpload: (url: string) => void, labe
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [owners, setOwners] = useState<Owner[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [brokers, setBrokers] = useState<Broker[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
+  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+  const [loading, setLoading] = useState(true);
   const [extraCharges, setExtraCharges] = useState<{ description: string, value: number, period: string }[]>([]);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [renewingContract, setRenewingContract] = useState<Contract | null>(null);
@@ -736,8 +214,7 @@ export default function App() {
   const [extraPayments, setExtraPayments] = useState<{ description: string, value: number }[]>([]);
   const [secondaryOwners, setSecondaryOwners] = useState<{ owner_id: number, share_percent: number }[]>([]);
   const [uploadedUrl, setUploadedUrl] = useState('');
-  // New toast system - will be provided by ToastProvider
-  const { addToast } = useToast();
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const [debtsValue, setDebtsValue] = useState<number>(0);
   const [reportStartDate, setReportStartDate] = useState<string>(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
@@ -753,6 +230,7 @@ export default function App() {
   const [viewModalType, setViewModalType] = useState('');
   const [viewingItem, setViewingItem] = useState<any>(null);
   const [modalType, setModalType] = useState('');
+  const [user, setUser] = useState<{ id: string | number, name: string, email?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   const [paymentFilterStatus, setPaymentFilterStatus] = useState<string | null>(null);
@@ -760,68 +238,24 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [repasseOwnerFilter, setRepasseOwnerFilter] = useState<string>('');
   const [showSidebar, setShowSidebar] = useState(false);
-  // Delete confirmation modal state
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: string; id: number; item: any; variant?: 'warning' | 'danger' } | null>(null);
-  // Form submitting state for LoadingButton
-  const [formSubmitting, setFormSubmitting] = useState(false);
 
   // Helpers de filtragem global
   const filterList = (list: any[]) => {
     if (!searchTerm) return list;
     const search = searchTerm.toLowerCase();
-    return list.filter(item =>
-      Object.values(item).some(val =>
+    return list.filter(item => 
+      Object.values(item).some(val => 
         String(val).toLowerCase().includes(search)
       )
     );
   };
 
-  // React Query hooks for data fetching
-  const { data: owners = [], isLoading: ownersLoading } = useOwners();
-  const { data: tenants = [], isLoading: tenantsLoading } = useTenants();
-  const { data: properties = [], isLoading: propertiesLoading } = useProperties();
-  const { data: contracts = [], isLoading: contractsLoading } = useContracts();
-  const { data: payments = [], isLoading: paymentsLoading } = usePayments();
-  const { data: brokers = [], isLoading: brokersLoading } = useBrokers();
-  const { data: inspections = [], isLoading: inspectionsLoading } = useInspections();
-  const { data: maintenances = [], isLoading: maintenancesLoading } = useMaintenances();
-  const { data: user, isLoading: userLoading, error: userError, isError: userIsError } = useMe();
-  const { data: dbStatus } = useDbStatus();
-  const logoutMutation = useLogout();
+  const [dbStatus, setDbStatus] = useState<{ connected: boolean, error?: string, hasUsers?: boolean } | null>(null);
 
-  // Check if Supabase is misconfigured (common cause of blank screen)
-  // More aggressive detection - ANY error on user query likely means config issue
-  const isSupabaseError = userIsError || (userError != null);
-
-  const loading = ownersLoading || tenantsLoading || propertiesLoading || contractsLoading ||
-                  paymentsLoading || brokersLoading || inspectionsLoading || maintenancesLoading || userLoading;
-
-  // Filter payments for financial tab (must be before useEffects that depend on it)
-  const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
-    if (ignoreDateFilter) return true;
-
-    // Pegamos apenas a parte da data (YYYY-MM-DD) caso venha com timestamp
-    const dueDate = p.due_date?.substring(0, 10);
-    const receivedDate = p.received_date?.substring(0, 10);
-
-    const isDueInRange = dueDate && dueDate >= reportStartDate && dueDate <= reportEndDate;
-    const isReceivedInRange = receivedDate && receivedDate >= reportStartDate && receivedDate <= reportEndDate;
-
-    return isDueInRange || isReceivedInRange;
-  });
-
-  // Filtragem composta para a tabela financeira — elimina lógica duplicada
-  const displayedPayments = filteredPayments.filter(p => {
-    if (paymentFilterStatus === 'paid') return p.status === 'paid';
-    if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
-    if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
-    if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
-    return true;
-  }).filter(p => {
-    if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    return p.tenant_name?.toLowerCase().includes(s) || p.address?.toLowerCase().includes(s) || p.owner_name?.toLowerCase().includes(s);
-  });
+  useEffect(() => {
+    checkAuth();
+    checkDbStatus();
+  }, []);
 
   // Background Sync para faturas do Asaas
   useEffect(() => {
@@ -831,24 +265,39 @@ export default function App() {
         console.log(`[SYNC] Verificando status de ${pendingAsaas.length} faturas pendentes...`);
         // Sincroniza apenas as 3 primeiras para não sobrecarregar
         pendingAsaas.slice(0, 3).forEach(p => {
-          fetch(`/api/asaas/check-payment/${p.id}`).then(() => {
-            // React Query will automatically refetch, but we can trigger invalidation if needed
-          });
+          fetch(`/api/asaas/check-payment/${p.id}`).then(() => fetchData());
         });
       }
     }
-  }, [activeTab, filteredPayments]);
+  }, [activeTab]);
 
-  useEffect(() => {
-    if (user) {
-      setAuthChecked(true);
-    } else if (!userLoading) {
+  const checkDbStatus = async () => {
+    try {
+      const res = await fetch('/api/public/db-status');
+      const data = await res.json();
+      setDbStatus(data);
+    } catch (e) {
+      setDbStatus({ connected: false, error: 'Erro ao conectar com o servidor' });
+    }
+  };
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/me');
+      if (res.ok) {
+        const userData = await res.json();
+        setUser(userData);
+        fetchData();
+      } else {
+        setUser(null);
+      }
+    } catch (e) {
+      console.error("Auth check failed", e);
+      setUser(null);
+    } finally {
       setAuthChecked(true);
     }
-    // Safety timeout - force auth check after 10s to prevent infinite loading
-    const timeout = setTimeout(() => setAuthChecked(true), 10000);
-    return () => clearTimeout(timeout);
-  }, [user, userLoading]);
+  };
 
   const handlePrint = (type: typeof printType) => {
     setPrintType(type);
@@ -860,7 +309,8 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await logoutMutation.mutateAsync();
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setUser(null);
     } catch (e) {
       console.error("Logout failed", e);
     }
@@ -892,336 +342,410 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const showToast = (message: string | { title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' }, type?: 'success' | 'error' | 'info' | 'warning') => {
-    if (typeof message === 'string') {
-      addToast({ title: type === 'success' ? 'Sucesso' : type === 'error' ? 'Erro' : type === 'warning' ? 'Atenção' : 'Informação', message, type: type || 'info' });
-    } else {
-      addToast(message);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const responses = await Promise.all([
+        fetch('/api/owners'),
+        fetch('/api/tenants'),
+        fetch('/api/properties'),
+        fetch('/api/contracts'),
+        fetch('/api/payments'),
+        fetch('/api/brokers'),
+        fetch('/api/inspections'),
+        fetch('/api/maintenances')
+      ]);
+
+      let authFailed = false;
+      const data = await Promise.all(responses.map(async (res, index) => {
+        if (res.status === 401) {
+          if (!authFailed) {
+            authFailed = true;
+            console.error(`Recebido 401 na requisição, redirecionando para login...`);
+            setTimeout(() => {
+              alert('Sua sessão de login está inválida ou expirou. Por favor, tente logar novamente.');
+            }, 500);
+            setUser(null);
+          }
+          return [];
+        }
+        return res.ok ? await res.json() : [];
+      }));
+      const [o, t, p, c, pay, b, insp, maint] = data;
+
+      if (Array.isArray(o)) setOwners(o);
+      if (Array.isArray(t)) setTenants(t);
+      if (Array.isArray(p)) setProperties(p);
+      if (Array.isArray(c)) setContracts(c);
+      if (Array.isArray(pay)) setPayments(pay);
+      if (Array.isArray(b)) setBrokers(b);
+      if (Array.isArray(insp)) setInspections(insp);
+      if (Array.isArray(maint)) setMaintenances(maint);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // React Query Mutations
-  const createOwnerMutation = useCreateOwner({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar proprietário: ${e.message}`, type: 'error' }),
-  });
-  const updateOwnerMutation = useUpdateOwner({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar proprietário: ${e.message}`, type: 'error' }),
-  });
-  const deleteOwnerMutation = useDeleteOwner({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Proprietário excluído', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
+  const filteredPayments = (Array.isArray(payments) ? payments : []).filter(p => {
+    if (ignoreDateFilter) return true;
+
+    // Pegamos apenas a parte da data (YYYY-MM-DD) caso venha com timestamp
+    const dueDate = p.due_date?.substring(0, 10);
+    const receivedDate = p.received_date?.substring(0, 10);
+
+    const isDueInRange = dueDate && dueDate >= reportStartDate && dueDate <= reportEndDate;
+    const isReceivedInRange = receivedDate && receivedDate >= reportStartDate && receivedDate <= reportEndDate;
+
+    return isDueInRange || isReceivedInRange;
   });
 
-  const createTenantMutation = useCreateTenant({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar inquilino: ${e.message}`, type: 'error' }),
-  });
-  const updateTenantMutation = useUpdateTenant({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar inquilino: ${e.message}`, type: 'error' }),
-  });
-  const deleteTenantMutation = useDeleteTenant({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Inquilino excluído', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
-  });
-  const syncAsaasTenantMutation = useSyncAsaasTenant({
-    onSuccess: () => addToast({ title: 'Sucesso', message: 'Inquilino sincronizado com Asaas', type: 'success' }),
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
+  // Filtragem composta para a tabela financeira — elimina lógica duplicada
+  const displayedPayments = filteredPayments.filter(p => {
+    if (paymentFilterStatus === 'paid') return p.status === 'paid';
+    if (paymentFilterStatus === 'CONFIRMED') return p.asaas_status === 'CONFIRMED';
+    if (paymentFilterStatus === 'pending') return p.status === 'pending' && new Date(p.due_date) >= new Date();
+    if (paymentFilterStatus === 'overdue') return p.status === 'pending' && new Date(p.due_date) < new Date();
+    return true;
+  }).filter(p => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toLowerCase();
+    return p.tenant_name?.toLowerCase().includes(s) || p.address?.toLowerCase().includes(s) || p.owner_name?.toLowerCase().includes(s);
   });
 
-  const createPropertyMutation = useCreateProperty({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); setSecondaryOwners([]); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar imóvel: ${e.message}`, type: 'error' }),
-  });
-  const updatePropertyMutation = useUpdateProperty({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); setSecondaryOwners([]); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar imóvel: ${e.message}`, type: 'error' }),
-  });
-  const deletePropertyMutation = useDeleteProperty({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Imóvel excluído', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
-  });
+  const handleCreateBroker = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
 
-  const createContractMutation = useCreateContract({
-    onSuccess: (newContract) => {
+    try {
+      if (editingItem) {
+        const res = await fetch(`/api/brokers/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/brokers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
       setShowModal(false);
       setEditingItem(null);
-      setFormSubmitting(false);
-      setExtraCharges([]);
-      // Create initial payment for new contract
-      if (newContract) {
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar corretor: ${e.message}`);
+    }
+  };
+
+  const handleCreateInspection = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      if (editingItem) {
+        const res = await fetch(`/api/inspections/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/inspections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      setShowModal(false);
+      setEditingItem(null);
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar vistoria: ${e.message}`);
+    }
+  };
+
+  const handleCreateMaintenance = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      if (editingItem) {
+        const res = await fetch(`/api/maintenances/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/maintenances', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      setShowModal(false);
+      setEditingItem(null);
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar manutenção: ${e.message}`);
+    }
+  };
+
+  const handleDelete = async (type: string, id: number) => {
+    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
+    try {
+      const res = await fetch(`/api/${type}/${id}`, { method: 'DELETE' });
+      if (res.status === 401) {
+        alert("Sua sessão expirou. Por favor, faça login novamente.");
+        setUser(null);
+        return;
+      }
+      if (res.ok) {
+        fetchData();
+      } else {
+        const errorData = await res.json().catch(() => ({ error: res.statusText }));
+        alert(`Erro ao excluir: ${errorData.error || errorData}`);
+      }
+    } catch (e: any) {
+      alert(`Erro ao excluir: ${e.message}`);
+    }
+  };
+
+  const handleCreateOwner = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      if (editingItem) {
+        const res = await fetch(`/api/owners/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/owners', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      setShowModal(false);
+      setEditingItem(null);
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar proprietário: ${e.message}`);
+    }
+  };
+
+  const handleCreateTenant = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      if (editingItem) {
+        const res = await fetch(`/api/tenants/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/tenants', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      setShowModal(false);
+      setEditingItem(null);
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar inquilino: ${e.message}`);
+    }
+  };
+
+  const handleCreateProperty = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      const payload = {
+        ...data,
+        secondary_owners: secondaryOwners
+      };
+
+      if (editingItem) {
+        const res = await fetch(`/api/properties/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/properties', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      setShowModal(false);
+      setEditingItem(null);
+      setSecondaryOwners([]);
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar imóvel: ${e.message}`);
+    }
+  };
+
+  const handleCreateContract = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+      const payload = {
+        ...data,
+        extra_charges: JSON.stringify(extraCharges)
+      };
+
+      if (editingItem) {
+        const res = await fetch(`/api/contracts/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(await res.text());
+      } else {
+        const res = await fetch('/api/contracts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const { id } = await res.json();
+
+        // Create initial payment
+        const contract = data as any;
         const today = new Date();
-        const dueDay = editingItem?.due_day || 5;
-        const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
+        const dueDate = new Date(today.getFullYear(), today.getMonth(), parseInt(contract.due_day));
         if (dueDate < today) dueDate.setMonth(dueDate.getMonth() + 1);
-        createPaymentMutation.mutate({
-          contract_id: newContract.id,
-          due_date: dueDate.toISOString().split('T')[0],
-          status: 'pending'
+
+        await fetch('/api/payments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contract_id: id,
+            due_date: dueDate.toISOString().split('T')[0],
+            status: 'pending'
+          })
         });
       }
-    },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar contrato: ${e.message}`, type: 'error' }),
-  });
-  const updateContractMutation = useUpdateContract({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); setExtraCharges([]); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar contrato: ${e.message}`, type: 'error' }),
-  });
-  const deleteContractMutation = useDeleteContract({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Contrato excluído', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
-  });
-  const renewContractMutation = useRenewContract({
-    onSuccess: () => { setShowRenewModal(false); setRenewingContract(null); addToast({ title: 'Sucesso', message: 'Contrato renovado!', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao renovar: ${e.message}`, type: 'error' }),
-  });
-  const generatePaymentsMutation = useGeneratePayments({
-    onSuccess: () => addToast({ title: 'Sucesso', message: 'Cobranças geradas', type: 'success' }),
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
 
-  const createPaymentMutation = useCreatePayment();
-  const updatePaymentMutation = useUpdatePayment({
-    onSuccess: () => { setShowPaymentModal(false); setSelectedPayment(null); setExtraPayments([]); addToast({ title: 'Sucesso', message: 'Pagamento atualizado', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-  const deletePaymentMutation = useDeletePayment();
-  const checkAsaasPaymentMutation = useCheckAsaasPayment({
-    onSuccess: (data) => addToast({ title: 'Sucesso', message: `Status Asaas: ${data.asaas_status}`, type: 'success' }),
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-  const createAsaasPaymentMutation = useCreateAsaasPayment({
-    onSuccess: (data) => { addToast({ title: 'Sucesso', message: 'Cobrança gerada no Asaas!', type: 'success' }); if (data.asaas_invoice_url) window.open(data.asaas_invoice_url, '_blank'); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-  const transferPaymentMutation = useTransferPayment({
-    onSuccess: () => { setShowRepasseDetailModal(false); setShowRepasseModal(false); addToast({ title: 'Sucesso', message: 'Repasse realizado!', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-  const transferBrokerMutation = useTransferBroker({
-    onSuccess: () => addToast({ title: 'Sucesso', message: 'Repasse ao corretor realizado!', type: 'success' }),
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-
-  const createBrokerMutation = useCreateBroker({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar corretor: ${e.message}`, type: 'error' }),
-  });
-  const updateBrokerMutation = useUpdateBroker({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar corretor: ${e.message}`, type: 'error' }),
-  });
-  const deleteBrokerMutation = useDeleteBroker({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Corretor excluído', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
-  });
-
-  const createInspectionMutation = useCreateInspection({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar vistoria: ${e.message}`, type: 'error' }),
-  });
-  const updateInspectionMutation = useUpdateInspection({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar vistoria: ${e.message}`, type: 'error' }),
-  });
-  const deleteInspectionMutation = useDeleteInspection({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Vistoria excluída', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
-  });
-
-  const createMaintenanceMutation = useCreateMaintenance({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao salvar manutenção: ${e.message}`, type: 'error' }),
-  });
-  const updateMaintenanceMutation = useUpdateMaintenance({
-    onSuccess: () => { setShowModal(false); setEditingItem(null); setFormSubmitting(false); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao atualizar manutenção: ${e.message}`, type: 'error' }),
-  });
-  const deleteMaintenanceMutation = useDeleteMaintenance({
-    onSuccess: () => { setDeleteConfirm(null); addToast({ title: 'Sucesso', message: 'Manutenção excluída', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro ao excluir: ${e.message}`, type: 'error' }),
-  });
-
-  const createSubscriptionMutation = useCreateSubscription({
-    onSuccess: () => addToast({ title: 'Sucesso', message: 'Assinatura criada!', type: 'success' }),
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-  const checkSubscriptionMutation = useCheckSubscription({
-    onSuccess: (data) => addToast({ title: 'Sucesso', message: data.asaas_subscription_id ? 'Assinatura ativa no Asaas' : 'Assinatura excluída no Asaas', type: 'success' }),
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-
-  const importDataMutation = useImportData({
-    onSuccess: () => { setShowImportModal(false); addToast({ title: 'Sucesso', message: 'Importação concluída', type: 'success' }); },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro: ${e.message}`, type: 'error' }),
-  });
-
-  const uploadFileMutation = useUploadFile({
-    onSuccess: (data) => { /* handled in FileUpload */ },
-    onError: (e) => addToast({ title: 'Erro', message: `Erro no upload: ${e.message}`, type: 'error' }),
-  });
-
-  const handleCreateBroker = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    setFormSubmitting(true);
-    if (editingItem) {
-      updateBrokerMutation.mutate({ id: editingItem.id, data });
-    } else {
-      createBrokerMutation.mutate(data);
+      setShowModal(false);
+      setEditingItem(null);
+      setExtraCharges([]);
+      fetchData();
+    } catch (e: any) {
+      alert(`Erro ao salvar contrato: ${e.message}`);
     }
   };
 
-  const handleCreateInspection = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    setFormSubmitting(true);
-    if (editingItem) {
-      updateInspectionMutation.mutate({ id: editingItem.id, data });
-    } else {
-      createInspectionMutation.mutate(data);
-    }
-  };
-
-  const handleCreateMaintenance = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    setFormSubmitting(true);
-    if (editingItem) {
-      updateMaintenanceMutation.mutate({ id: editingItem.id, data });
-    } else {
-      createMaintenanceMutation.mutate(data);
-    }
-  };
-
-  const handleDelete = (type: string, id: number, item?: any, variant?: 'warning' | 'danger') => {
-    // Open confirmation modal with item details
-    setDeleteConfirm({ type, id, item, variant: variant || 'danger' });
-  };
-
-  const confirmDelete = () => {
-    if (!deleteConfirm) return;
-    const { type, id } = deleteConfirm;
-    setDeleteConfirm(prev => prev ? { ...prev, loading: true } : null);
-    switch (type) {
-      case 'owners':
-        deleteOwnerMutation.mutate(id);
-        break;
-      case 'tenants':
-        deleteTenantMutation.mutate(id);
-        break;
-      case 'properties':
-        deletePropertyMutation.mutate(id);
-        break;
-      case 'contracts':
-        deleteContractMutation.mutate(id);
-        break;
-      case 'payments':
-        deletePaymentMutation.mutate(id);
-        break;
-      case 'brokers':
-        deleteBrokerMutation.mutate(id);
-        break;
-      case 'inspections':
-        deleteInspectionMutation.mutate(id);
-        break;
-      case 'maintenances':
-        deleteMaintenanceMutation.mutate(id);
-        break;
-      default:
-        setDeleteConfirm(null);
-        addToast({ title: 'Erro', message: `Tipo desconhecido: ${type}`, type: 'error' });
-    }
-  };
-
-  const handleCreateOwner = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    setFormSubmitting(true);
-    if (editingItem) {
-      updateOwnerMutation.mutate({ id: editingItem.id, data });
-    } else {
-      createOwnerMutation.mutate(data);
-    }
-  };
-
-  const handleCreateTenant = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    setFormSubmitting(true);
-    if (editingItem) {
-      updateTenantMutation.mutate({ id: editingItem.id, data });
-    } else {
-      createTenantMutation.mutate(data);
-    }
-  };
-
-  const handleCreateProperty = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    const payload = {
-      ...data,
-      secondary_owners: secondaryOwners
-    };
-    setFormSubmitting(true);
-    if (editingItem) {
-      updatePropertyMutation.mutate({ id: editingItem.id, data: payload });
-    } else {
-      createPropertyMutation.mutate(payload);
-    }
-  };
-
-  const handleCreateContract = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
-    const payload = {
-      ...data,
-      extra_charges: JSON.stringify(extraCharges)
-    };
-    setFormSubmitting(true);
-    if (editingItem) {
-      updateContractMutation.mutate({ id: editingItem.id, data: payload });
-    } else {
-      createContractMutation.mutate(payload);
-    }
-  };
-
-  const handleRenewContract = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleRenewContract = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!renewingContract) return;
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-    const payload = {
-      id: renewingContract.id,
-      data: {
-        end_date: data.end_date,
-        new_rent_value: data.rent_value ? parseFloat(data.rent_value as string) : undefined,
-      }
-    };
-    renewContractMutation.mutate(payload);
-  };
 
-  // Form submit handler with loading state
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    setFormSubmitting(true);
-    const handler =
-      modalType === 'owners' ? handleCreateOwner :
-      modalType === 'tenants' ? handleCreateTenant :
-      modalType === 'properties' ? handleCreateProperty :
-      modalType === 'brokers' ? handleCreateBroker :
-      modalType === 'inspections' ? handleCreateInspection :
-      modalType === 'maintenances' ? handleCreateMaintenance :
-      handleCreateContract;
-    handler(e);
+    try {
+      // 1. Create the new contract
+      const newContractPayload = {
+        property_id: renewingContract.property_id,
+        tenant_id: renewingContract.tenant_id,
+        start_date: data.start_date,
+        end_date: data.end_date,
+        rent_value: data.rent_value,
+        due_day: data.due_day,
+        admin_tax: data.admin_tax,
+        adjustment_index: data.adjustment_index,
+        guarantee_type: data.guarantee_type,
+        guarantee_value: data.guarantee_value,
+        charges: renewingContract.charges || 0,
+        transfer_value: renewingContract.transfer_value || 0,
+        water_installation: renewingContract.water_installation || '',
+        electricity_installation: renewingContract.electricity_installation || '',
+        gas_installation: renewingContract.gas_installation || '',
+        broker_id: renewingContract.broker_id || null,
+        broker_commission_percent: renewingContract.broker_commission_percent || 0,
+        agency_commission_value: renewingContract.agency_commission_value || 0,
+        iptu_status: renewingContract.iptu_status || 'pending',
+        condo_status: renewingContract.condo_status || 'pending',
+        status: 'ativo',
+        extra_charges: renewingContract.extra_charges || '[]'
+      };
+
+      const res = await fetch('/api/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newContractPayload)
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { id } = await res.json();
+
+      // Create initial payment
+      const today = new Date();
+      const dueDate = new Date(today.getFullYear(), today.getMonth(), parseInt(data.due_day as string));
+      if (dueDate < today) dueDate.setMonth(dueDate.getMonth() + 1);
+
+      await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contract_id: id,
+          due_date: dueDate.toISOString().split('T')[0],
+          status: 'pending'
+        })
+      });
+
+      // 2. Mark old contract as finished ('finalizado')
+      const updateOldRes = await fetch(`/api/contracts/${renewingContract.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...renewingContract,
+          status: 'finalizado'
+        })
+      });
+      if (!updateOldRes.ok) throw new Error(await updateOldRes.text());
+
+      showToast('Contrato renovado com sucesso!', 'success');
+      setShowRenewModal(false);
+      setRenewingContract(null);
+      fetchData();
+    } catch (e: any) {
+      showToast(`Erro ao renovar contrato: ${e.message}`, 'error');
+    }
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -1237,11 +761,16 @@ export default function App() {
     }
   };
 
-  const handleUpdatePayment = (id: number, updates: Partial<Payment>) => {
-    updatePaymentMutation.mutate({ id, data: updates });
+  const handleUpdatePayment = async (id: number, updates: Partial<Payment>) => {
+    await fetch(`/api/payments/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    fetchData();
   };
 
-  const handleProcessPayment = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleProcessPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedPayment) return;
 
@@ -1257,253 +786,186 @@ export default function App() {
       status: 'paid' as const
     };
 
-    handleUpdatePayment(selectedPayment.id, payload);
+    await handleUpdatePayment(selectedPayment.id, payload);
+    setShowPaymentModal(false);
+    setSelectedPayment(null);
+    setExtraPayments([]);
   };
 
-  const handleAsaasSync = (tenantId: number) => {
-    syncAsaasTenantMutation.mutate(tenantId);
+  const handleAsaasSync = async (tenantId: number) => {
+    try {
+      const res = await fetch(`/api/asaas/sync-tenant/${tenantId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Inquilino sincronizado com Asaas com sucesso!');
+        fetchData();
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (e) {
+      alert('Erro ao conectar com o servidor.');
+    }
   };
 
-  const handleAsaasPayment = (paymentId: number) => {
-    createAsaasPaymentMutation.mutate(paymentId);
+  const handleAsaasPayment = async (paymentId: number) => {
+    try {
+      const res = await fetch(`/api/asaas/create-payment/${paymentId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Cobrança gerada no Asaas!');
+        if (data.invoiceUrl) window.open(data.invoiceUrl, '_blank');
+        fetchData();
+      } else {
+        alert(`Erro: ${data.error}`);
+      }
+    } catch (e) {
+      alert('Erro ao conectar com o servidor.');
+    }
   };
 
-  const handleManualTransfer = (paymentId: number) => {
+  const handleManualTransfer = async (paymentId: number) => {
     if (!confirm('Confirmar repasse manual para o proprietário? O status de repasse do pagamento será atualizado para concluído.')) return;
-    handleUpdatePayment(paymentId, {
-      transfer_status: 'done',
-      transfer_date: new Date().toISOString().split('T')[0]
-    });
-    showToast('Repasse manual registrado com sucesso!', 'success');
-    setShowRepasseDetailModal(false);
-    setShowRepasseModal(false);
+    try {
+      await handleUpdatePayment(paymentId, { 
+        transfer_status: 'done',
+        transfer_date: new Date().toISOString().split('T')[0]
+      });
+      showToast('Repasse manual registrado com sucesso!', 'success');
+      setShowRepasseDetailModal(false);
+      setShowRepasseModal(false);
+      fetchData();
+    } catch (e) {
+      showToast('Erro ao atualizar status de repasse.', 'error');
+    }
   };
 
-  const handleAsaasTransfer = (paymentId: number) => {
+  const handleAsaasTransfer = async (paymentId: number) => {
     if (!confirm('Deseja realizar o repasse para o proprietário via Asaas agora?')) return;
-    transferPaymentMutation.mutate(paymentId);
+    try {
+      const res = await fetch(`/api/asaas/transfer/${paymentId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Repasse realizado com sucesso!');
+        setShowRepasseDetailModal(false);
+        setShowRepasseModal(false);
+        fetchData();
+
+        // Notificação WhatsApp
+        const payment = payments.find(p => p.id === paymentId);
+        const property = properties.find(prop => prop.id === contracts.find(c => c.id === payment?.contract_id)?.property_id);
+        const owner = owners.find(o => o.id === property?.owner_id);
+
+        if (owner?.phone && confirm('Deseja notificar o proprietário via WhatsApp?')) {
+          const message = `Olá ${owner.name}, informamos que o repasse referente ao aluguel do imóvel ${property?.address} foi realizado com sucesso. Valor: R$ ${payment?.transfer_amount?.toLocaleString('pt-BR')}.`;
+          const whatsappUrl = `https://wa.me/55${owner.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
+          window.open(whatsappUrl, '_blank');
+        }
+      } else {
+        alert(`Erro: ${data.error || 'Verifique os dados bancários do proprietário.'}`);
+      }
+    } catch (e) {
+      alert('Erro ao conectar com o servidor.');
+    }
   };
 
-  const handleAsaasCheck = (paymentId: number) => {
-    showToast('Conferindo status no Asaas...', 'info');
-    checkAsaasPaymentMutation.mutate(paymentId);
+  const handleAsaasCheck = async (paymentId: number) => {
+    try {
+      showToast('Conferindo status no Asaas...', 'info');
+      const res = await fetch(`/api/asaas/check-payment/${paymentId}`);
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Status Asaas: ${data.status}. Local: ${data.localStatus}`, 'success');
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
   };
 
-  const handleAsaasBrokerTransfer = (paymentId: number) => {
+  const handleAsaasBrokerTransfer = async (paymentId: number) => {
     if (!confirm('Deseja realizar o repasse da comissão para o corretor via PIX Asaas agora?')) return;
-    showToast('Processando repasse ao corretor...', 'info');
-    transferBrokerMutation.mutate(paymentId);
+    try {
+      showToast('Processando repasse ao corretor...', 'info');
+      const res = await fetch(`/api/asaas/transfer-broker/${paymentId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Repasse ao corretor realizado com sucesso!', 'success');
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error || 'Verifique a chave PIX do corretor.'}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
   };
 
-  const handleAsaasSubscription = (contractId: number) => {
+  const handleAsaasSubscription = async (contractId: number) => {
     if (!confirm('Deseja criar uma assinatura mensal no Asaas para este contrato? Isso automatizará a geração de cobranças.')) return;
-    showToast('Criando assinatura no Asaas...', 'info');
-    createSubscriptionMutation.mutate(contractId);
+    try {
+      showToast('Criando assinatura no Asaas...', 'info');
+      const res = await fetch(`/api/asaas/create-subscription/${contractId}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Assinatura criada com sucesso!', 'success');
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
   };
 
-  const handleCheckSubscription = (contractId: number) => {
-    showToast('Verificando status da assinatura...', 'info');
-    checkSubscriptionMutation.mutate(contractId);
+  const handleCheckSubscription = async (contractId: number) => {
+    try {
+      showToast('Verificando status da assinatura...', 'info');
+      const res = await fetch(`/api/asaas/check-subscription/${contractId}`);
+      const data = await res.json();
+      if (res.ok) {
+        if (!data.active) {
+          showToast('Assinatura excluída no Asaas. Sincronizado!', 'success');
+        } else {
+          showToast('Assinatura ainda está ativa no Asaas.', 'success');
+        }
+        fetchData();
+      } else {
+        showToast(`Erro: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
   };
 
-  const handleGeneratePayments = () => {
+  const handleGeneratePayments = async () => {
     const today = new Date();
     const month = today.getMonth() + 1;
     const year = today.getFullYear();
 
     if (!confirm(`Deseja gerar as mensalidades de todos os contratos ativos para o mês ${month}/${year}?`)) return;
 
-    generatePaymentsMutation.mutate();
-  };
-
-  // ===== PHASE 5: Business Features =====
-
-  // Duplicate Contract
-  const handleDuplicateContract = (contract: Contract) => {
-    if (!confirm('Deseja duplicar este contrato? Um novo contrato será criado com os mesmos dados (exceto datas).')) return;
-
-    const today = new Date();
-    const startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-    const endDate = new Date(today.getFullYear() + 1, today.getMonth(), 0).toISOString().split('T')[0];
-
-    const newContract = {
-      property_id: contract.property_id,
-      tenant_id: contract.tenant_id,
-      start_date: startDate,
-      end_date: endDate,
-      rent_value: contract.rent_value,
-      due_day: contract.due_day,
-      admin_tax: contract.admin_tax || 0,
-      adjustment_index: contract.adjustment_index,
-      guarantee_type: contract.guarantee_type || '',
-      guarantee_value: contract.guarantee_value || 0,
-      charges: contract.charges || 0,
-      transfer_value: contract.transfer_value || 0,
-      water_installation: contract.water_installation || '',
-      electricity_installation: contract.electricity_installation || '',
-      gas_installation: contract.gas_installation || '',
-      broker_id: contract.broker_id || null,
-      broker_commission_percent: contract.broker_commission_percent || 0,
-      agency_commission_value: contract.agency_commission_value || 0,
-      iptu_status: contract.iptu_status || 'pending',
-      condo_status: contract.condo_status || 'pending',
-      status: 'ativo' as const,
-      extra_charges: contract.extra_charges || '[]'
-    };
-
-    createContractMutation.mutate(newContract, {
-      onSuccess: (newContractData) => {
-        // Create initial payment
-        const dueDay = contract.due_day || 5;
-        const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
-        if (dueDate < today) dueDate.setMonth(dueDate.getMonth() + 1);
-        createPaymentMutation.mutate({
-          contract_id: newContractData.id,
-          due_date: dueDate.toISOString().split('T')[0],
-          status: 'pending'
-        });
-        showToast({ title: 'Sucesso', message: 'Contrato duplicado com sucesso!', type: 'success' });
-      },
-      onError: (e) => showToast({ title: 'Erro', message: `Erro ao duplicar: ${e.message}`, type: 'error' }),
-    });
-  };
-
-  // Export to CSV
-  const exportToCSV = (data: any[], filename: string, columns: ({ key: string; label: string; transform?: (item: any) => any }[])) => {
-    if (data.length === 0) {
-      showToast({ title: 'Aviso', message: 'Nenhum dado para exportar', type: 'warning' });
-      return;
-    }
-
-    const headers = columns.map(c => c.label).join(',');
-    const rows = data.map(item =>
-      columns.map(c => {
-        const value = c.transform ? c.transform(item) : item[c.key];
-        if (value === null || value === undefined) return '';
-        const str = String(value).replace(/"/g, '""');
-        return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str}"` : str;
-      }).join(',')
-    );
-
-    const csv = [headers, ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${filename}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-
-    showToast({ title: 'Sucesso', message: `${data.length} registros exportados para CSV`, type: 'success' });
-  };
-
-  // Export to PDF (simple HTML-based)
-  const exportToPDF = (data: any[], filename: string, columns: ({ key: string; label: string; transform?: (item: any) => any }[]), title: string) => {
-    if (data.length === 0) {
-      showToast({ title: 'Aviso', message: 'Nenhum dado para exportar', type: 'warning' });
-      return;
-    }
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      showToast({ title: 'Erro', message: 'Pop-up bloqueado. Permita pop-ups para exportar PDF.', type: 'error' });
-      return;
-    }
-
-    const tableRows = data.map(item =>
-      '<tr>' + columns.map(c => `<td>${c.transform ? c.transform(item) : (item[c.key] ?? '')}</td>`).join('') + '</tr>'
-    ).join('');
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 20px; }
-          h1 { color: #1e293b; margin-bottom: 10px; }
-          .meta { color: #64748b; font-size: 12px; margin-bottom: 20px; }
-          table { width: 100%; border-collapse: collapse; font-size: 11px; }
-          th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
-          th { background: #f1f5f9; font-weight: 700; }
-          tr:nth-child(even) { background: #f8fafc; }
-          @media print { body { padding: 0; } .no-print { display: none; } }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <div class="meta">Gerado em ${new Date().toLocaleString('pt-BR')} | ${data.length} registros</div>
-        <table>
-          <thead><tr>${columns.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-        <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 1000); }</script>
-      </body>
-      </html>
-    `;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-    showToast({ title: 'Sucesso', message: 'PDF aberto para impressão/salvamento', type: 'success' });
-  };
-
-  // Saved Filters
-  const [savedFilters, setSavedFilters] = useState<Record<string, { name: string; filters: any }>>(() => {
     try {
-      const stored = localStorage.getItem('imobi_saved_filters');
-      return stored ? JSON.parse(stored) : {};
-    } catch { return {}; }
-  });
-
-  const [showSavedFiltersModal, setShowSavedFiltersModal] = useState(false);
-  const [newFilterName, setNewFilterName] = useState('');
-
-  const saveCurrentFilters = (tab: string) => {
-    const filters = {
-      searchTerm,
-      paymentFilterStatus,
-      contractStatusFilter,
-      reportStartDate,
-      reportEndDate,
-      repasseOwnerFilter,
-      ignoreDateFilter,
-    };
-    const name = newFilterName || `Filtro ${new Date().toLocaleString('pt-BR')}`;
-    setSavedFilters(prev => {
-      const updated = { ...prev, [tab]: { name, filters } };
-      localStorage.setItem('imobi_saved_filters', JSON.stringify(updated));
-      return updated;
-    });
-    setNewFilterName('');
-    showToast({ title: 'Sucesso', message: 'Filtro salvo com sucesso!', type: 'success' });
-  };
-
-  const applySavedFilter = (tab: string) => {
-    const saved = savedFilters[tab];
-    if (!saved) return;
-    const f = saved.filters;
-    setSearchTerm(f.searchTerm || '');
-    setPaymentFilterStatus(f.paymentFilterStatus || null);
-    setContractStatusFilter(f.contractStatusFilter || 'ativos');
-    setReportStartDate(f.reportStartDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-    setReportEndDate(f.reportEndDate || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
-    setRepasseOwnerFilter(f.repasseOwnerFilter || '');
-    setIgnoreDateFilter(f.ignoreDateFilter || false);
-    showToast({ title: 'Sucesso', message: `Filtro "${saved.name}" aplicado`, type: 'success' });
-  };
-
-  const deleteSavedFilter = (tab: string) => {
-    setSavedFilters(prev => {
-      const updated = { ...prev };
-      delete updated[tab];
-      localStorage.setItem('imobi_saved_filters', JSON.stringify(updated));
-      return updated;
-    });
-    showToast({ title: 'Sucesso', message: 'Filtro salvo removido', type: 'success' });
+      const res = await fetch('/api/contracts/generate-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, year })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message, 'success');
+        fetchData();
+      } else {
+        showToast(data.error, 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao conectar com o servidor.', 'error');
+    }
   };
 
   const handleImportFile = (type: 'owners' | 'tenants' | 'properties', file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = e.target?.result;
         let jsonData: any[] = [];
@@ -1518,16 +980,21 @@ export default function App() {
           jsonData = XLSX.utils.sheet_to_json(worksheet);
         }
 
-        importDataMutation.mutate({ type, file }, {
-          onSuccess: (responseData) => {
-            addToast({ title: 'Sucesso', message: `${responseData.count} registros importados com sucesso!`, type: 'success' });
-          },
-          onError: (err) => {
-            addToast({ title: 'Erro', message: `Erro na importação: ${err.message}`, type: 'error' });
-          },
+        const res = await fetch(`/api/import/${type}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(jsonData)
         });
+
+        const responseData = await res.json();
+        if (res.ok) {
+          alert(`${responseData.count} registros importados com sucesso!`);
+          fetchData();
+        } else {
+          alert(`Erro na importação: ${responseData.error}`);
+        }
       } catch (err) {
-        addToast({ title: 'Erro', message: 'Erro ao processar arquivo. Verifique se o formato está correto.', type: 'error' });
+        alert('Erro ao processar arquivo. Verifique se o formato está correto.');
       }
     };
 
@@ -1571,49 +1038,10 @@ export default function App() {
     </div>
   );
 
-  // Show friendly error if Supabase is not configured (prevents blank blue screen)
-  if (isSupabaseError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-        <div className="glass-card w-full max-w-md p-10 text-center space-y-6">
-          <div className="w-20 h-20 mx-auto bg-amber-100 rounded-full flex items-center justify-center">
-            <AlertTriangle size={40} className="text-amber-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Supabase não configurado</h1>
-            <p className="text-slate-500 mt-2">O aplicativo precisa das credenciais do Supabase para funcionar.</p>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-left space-y-3">
-            <p className="font-semibold text-amber-800">Como resolver:</p>
-            <ol className="text-sm text-amber-700 space-y-2 list-decimal list-inside">
-              <li>Vá no <strong>Vercel Dashboard</strong> → Settings → Environment Variables</li>
-              <li>Adicione: <code className="bg-amber-100 px-1 rounded">SUPABASE_URL</code></li>
-              <li>Adicione: <code className="bg-amber-100 px-1 rounded">SUPABASE_ANON_KEY</code></li>
-              <li>Adicione: <code className="bg-amber-100 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code></li>
-              <li>Faça novo deploy (Redeploy)</li>
-            </ol>
-            <p className="text-xs text-amber-500 mt-3">Para desenvolvimento local, crie arquivo <code>.env</code> na raiz com essas variáveis.</p>
-          </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Get queryClient to update user cache on login
-  const queryClient = useQueryClient();
-
-  if (!user) return <Auth onLogin={(u) => { queryClient.setQueryData(queryKeys.me, { user: { id: u.id, email: u.email } }); }} />;
+  if (!user) return <Auth onLogin={(u) => { setUser(u); fetchData(); }} />;
 
   return (
-    <ToastProvider>
-      <a href="#main-content" className="skip-link">Pular para o conteúdo principal</a>
-      <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       {/* Mobile Sidebar Overlay */}
       {showSidebar && (
         <div 
@@ -1686,7 +1114,7 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main id="main-content" className="flex-1 overflow-y-auto p-4 md:p-8 w-full">
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full">
         <header className="flex justify-between items-center mb-8 gap-4">
           <div>
             <h2 className="text-3xl font-bold tracking-tight capitalize">
@@ -2117,58 +1545,7 @@ export default function App() {
 
               {activeTab === 'brokers' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  {/* Export & Saved Filters */}
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.brokers && (
-                        <button
-                          onClick={() => applySavedFilter('brokers')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.brokers.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.brokers.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filterList(brokers), 'corretores', [
-                          { key: 'name', label: 'Corretor' },
-                          { key: 'email', label: 'Email' },
-                          { key: 'phone', label: 'Telefone' },
-                          { key: 'document', label: 'Documento' },
-                          { key: 'pix_key', label: 'Chave PIX' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar CSV"
-                        aria-label="Exportar CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filterList(brokers), 'corretores', [
-                          { key: 'name', label: 'Corretor' },
-                          { key: 'email', label: 'Email' },
-                          { key: 'phone', label: 'Telefone' },
-                          { key: 'document', label: 'Documento' },
-                          { key: 'pix_key', label: 'Chave PIX' },
-                        ], 'Corretores')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar PDF"
-                        aria-label="Exportar PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left mobile-cards-table">
+                  <table className="w-full text-left">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Corretor</th>
@@ -2178,36 +1555,23 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(brokers).length === 0 ? (
-                        <TableEmptyState
-                          colSpan={3}
-                          icon={<UserPlus size={32} />}
-                          title="Nenhum corretor cadastrado"
-                          description="Comece adicionando o primeiro corretor à sua imobiliária."
-                          action={
-                            <button
-                              onClick={() => { setModalType('brokers'); setShowModal(true); }}
-                              className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                            >
-                              <Plus size={18} /> Adicionar Corretor
-                            </button>
-                          }
-                        />
+                        <tr><td colSpan={3} className="px-8 py-16 text-center text-slate-400 italic">Nenhum corretor encontrado.</td></tr>
                       ) : filterList(brokers).map(b => (
                         <tr key={b.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(b); setViewModalType('brokers'); setShowViewModal(true); }}>
-                          <td className="px-8 py-5" data-label="Corretor">
+                          <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{b.name}</div>
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Doc: {b.document}</div>
                           </td>
-                          <td className="px-8 py-5" data-label="Contato">
+                          <td className="px-8 py-5">
                             <div className="flex flex-col">
                               <span className="text-sm text-slate-600 font-medium">{b.email}</span>
                               <span className="text-xs text-slate-400">{b.phone}</span>
                             </div>
                           </td>
-                          <td className="px-8 py-5" data-label="Ações">
+                          <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(b); setModalType('brokers'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar corretor"><Settings size={18} /></button>
-                              <button onClick={(e) => { e.stopPropagation(); handleDelete('brokers', b.id, b); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir corretor"><Trash2 size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(b); setModalType('brokers'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete('brokers', b.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -2219,56 +1583,7 @@ export default function App() {
 
               {activeTab === 'inspections' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  {/* Export & Saved Filters */}
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.inspections && (
-                        <button
-                          onClick={() => applySavedFilter('inspections')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.inspections.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.inspections.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filterList(inspections), 'vistorias', [
-                          { key: 'address', label: 'Imóvel' },
-                          { key: 'type', label: 'Tipo' },
-                          { key: 'date', label: 'Data' },
-                          { key: 'status', label: 'Status' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar CSV"
-                        aria-label="Exportar CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filterList(inspections), 'vistorias', [
-                          { key: 'address', label: 'Imóvel' },
-                          { key: 'type', label: 'Tipo' },
-                          { key: 'date', label: 'Data' },
-                          { key: 'status', label: 'Status' },
-                        ], 'Vistorias')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar PDF"
-                        aria-label="Exportar PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left mobile-cards-table">
+                  <table className="w-full text-left">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel / Tipo</th>
@@ -2278,37 +1593,24 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(inspections).length === 0 ? (
-                        <TableEmptyState
-                          colSpan={3}
-                          icon={<ShieldCheck size={32} />}
-                          title="Nenhuma vistoria agendada"
-                          description="Agende vistorias de check-in e check-out para seus contratos."
-                          action={
-                            <button
-                              onClick={() => { setModalType('inspections'); setShowModal(true); }}
-                              className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                            >
-                              <Plus size={18} /> Agendar Vistoria
-                            </button>
-                          }
-                        />
+                        <tr><td colSpan={3} className="px-8 py-16 text-center text-slate-400 italic">Nenhuma vistoria encontrada.</td></tr>
                       ) : filterList(inspections).map(i => (
                         <tr key={i.id} className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-8 py-5" data-label="Imóvel / Tipo">
+                          <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{i.address}</div>
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{i.type}</div>
                           </td>
-                          <td className="px-8 py-5" data-label="Data / Status">
+                          <td className="px-8 py-5">
                             <div className="text-sm font-bold text-slate-600">{formatDate(i.date)}</div>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${i.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
                               {i.status === 'completed' ? 'Concluída' : 'Pendente'}
                             </span>
                           </td>
-                          <td className="px-8 py-5" data-label="Ações">
+                          <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              {i.photos_link && <button onClick={() => window.open(i.photos_link, '_blank')} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" aria-label="Ver fotos da vistoria"><ExternalLink size={18} /></button>}
-                              <button onClick={() => { setEditingItem(i); setModalType('inspections'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar vistoria"><Settings size={18} /></button>
-                              <button onClick={() => handleDelete('inspections', i.id, i)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir vistoria"><Trash2 size={18} /></button>
+                              {i.photos_link && <button onClick={() => window.open(i.photos_link, '_blank')} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><ExternalLink size={18} /></button>}
+                              <button onClick={() => { setEditingItem(i); setModalType('inspections'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('inspections', i.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -2320,60 +1622,7 @@ export default function App() {
 
               {activeTab === 'maintenances' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  {/* Export & Saved Filters */}
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.maintenances && (
-                        <button
-                          onClick={() => applySavedFilter('maintenances')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.maintenances.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.maintenances.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filterList(maintenances), 'manutencoes', [
-                          { key: 'address', label: 'Imóvel' },
-                          { key: 'description', label: 'Descrição' },
-                          { key: 'status', label: 'Status' },
-                          { key: 'estimated_cost', label: 'Custo Estimado' },
-                          { key: 'actual_cost', label: 'Custo Real' },
-                          { key: 'paid_by', label: 'Responsável' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar CSV"
-                        aria-label="Exportar CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filterList(maintenances), 'manutencoes', [
-                          { key: 'address', label: 'Imóvel' },
-                          { key: 'description', label: 'Descrição' },
-                          { key: 'status', label: 'Status' },
-                          { key: 'estimated_cost', label: 'Custo Estimado' },
-                          { key: 'actual_cost', label: 'Custo Real' },
-                          { key: 'paid_by', label: 'Responsável' },
-                        ], 'Manutenções')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar PDF"
-                        aria-label="Exportar PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left mobile-cards-table">
+                  <table className="w-full text-left">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel / Descrição</th>
@@ -2384,27 +1633,14 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(maintenances).length === 0 ? (
-                        <TableEmptyState
-                          colSpan={4}
-                          icon={<Wrench size={32} />}
-                          title="Nenhuma manutenção registrada"
-                          description="Registre solicitações de manutenção para acompanhar custos e status."
-                          action={
-                            <button
-                              onClick={() => { setModalType('maintenances'); setShowModal(true); }}
-                              className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                            >
-                              <Plus size={18} /> Nova Manutenção
-                            </button>
-                          }
-                        />
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhuma manutenção encontrada.</td></tr>
                       ) : filterList(maintenances).map(m => (
                         <tr key={m.id} className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-8 py-5" data-label="Imóvel / Descrição">
+                          <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{m.address}</div>
                             <div className="text-xs text-slate-400 font-medium truncate max-w-[200px]">{m.description}</div>
                           </td>
-                          <td className="px-8 py-5" data-label="Status / Custo">
+                          <td className="px-8 py-5">
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${
                               m.status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
                               m.status === 'approved' ? 'bg-blue-100 text-blue-600' :
@@ -2414,11 +1650,11 @@ export default function App() {
                             </span>
                             <div className="text-sm font-black text-slate-600 mt-1">R$ {m.estimated_cost.toLocaleString('pt-BR')}</div>
                           </td>
-                          <td className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-widest" data-label="Responsável">{m.paid_by || '-'}</td>
-                          <td className="px-8 py-5" data-label="Ações">
+                          <td className="px-8 py-5 text-xs font-bold text-slate-400 uppercase tracking-widest">{m.paid_by || '-'}</td>
+                          <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button onClick={() => { setEditingItem(m); setModalType('maintenances'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar manutenção"><Settings size={18} /></button>
-                              <button onClick={() => handleDelete('maintenances', m.id, m)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir manutenção"><Trash2 size={18} /></button>
+                              <button onClick={() => { setEditingItem(m); setModalType('maintenances'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={() => handleDelete('maintenances', m.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -2430,60 +1666,7 @@ export default function App() {
 
               {activeTab === 'owners' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  {/* Export & Saved Filters */}
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.owners && (
-                        <button
-                          onClick={() => applySavedFilter('owners')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.owners.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.owners.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filterList(owners), 'proprietarios', [
-                          { key: 'name', label: 'Proprietário' },
-                          { key: 'email', label: 'Email' },
-                          { key: 'phone', label: 'Telefone' },
-                          { key: 'document', label: 'Documento' },
-                          { key: 'bank_code', label: 'Banco' },
-                          { key: 'pix_key', label: 'Chave PIX' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar CSV"
-                        aria-label="Exportar CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filterList(owners), 'proprietarios', [
-                          { key: 'name', label: 'Proprietário' },
-                          { key: 'email', label: 'Email' },
-                          { key: 'phone', label: 'Telefone' },
-                          { key: 'document', label: 'Documento' },
-                          { key: 'bank_code', label: 'Banco' },
-                          { key: 'pix_key', label: 'Chave PIX' },
-                        ], 'Proprietários')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar PDF"
-                        aria-label="Exportar PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left mobile-cards-table">
+                  <table className="w-full text-left">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Proprietário</th>
@@ -2494,46 +1677,33 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(owners).length === 0 ? (
-                        <TableEmptyState
-                          colSpan={4}
-                          icon={<Users size={32} />}
-                          title="Nenhum proprietário cadastrado"
-                          description="Cadastre os proprietários dos imóveis para gerenciar repasses e contratos."
-                          action={
-                            <button
-                              onClick={() => { setModalType('owners'); setShowModal(true); }}
-                              className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                            >
-                              <Plus size={18} /> Adicionar Proprietário
-                            </button>
-                          }
-                        />
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum proprietário encontrado.</td></tr>
                       ) : filterList(owners).map(o => (
                         <tr key={o.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(o); setViewModalType('owners'); setShowViewModal(true); }}>
-                          <td className="px-8 py-5" data-label="Proprietário">
+                          <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{o.name}</div>
                             <div className="text-xs text-slate-400 font-bold">ID: {o.id.toString().slice(0, 8)}</div>
                           </td>
-                          <td className="px-8 py-5" data-label="Contato">
+                          <td className="px-8 py-5">
                             <div className="flex flex-col">
                               <span className="text-sm text-slate-600 font-medium">{o.email}</span>
                               <span className="text-xs text-slate-400">{o.phone}</span>
                             </div>
                           </td>
-                          <td className="px-8 py-5 text-sm text-slate-500 font-medium" data-label="Documento">{o.document}</td>
-                          <td className="px-8 py-5" data-label="Ações">
+                          <td className="px-8 py-5 text-sm text-slate-500 font-medium">{o.document}</td>
+                          <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button
+                              <button 
                                 onClick={(e) => { e.stopPropagation(); setEditingItem(o); setModalType('owners'); setShowModal(true); }}
                                 className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
-                                aria-label="Editar proprietário"
+                                title="Editar"
                               >
                                 <Settings size={18} />
                               </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete('owners', o.id, o); }}
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDelete('owners', o.id); }}
                                 className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                                aria-label="Excluir proprietário"
+                                title="Excluir"
                               >
                                 <Trash2 size={18} />
                               </button>
@@ -2548,58 +1718,7 @@ export default function App() {
 
               {activeTab === 'tenants' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  {/* Export & Saved Filters */}
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.tenants && (
-                        <button
-                          onClick={() => applySavedFilter('tenants')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.tenants.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.tenants.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filterList(tenants), 'inquilinos', [
-                          { key: 'name', label: 'Inquilino' },
-                          { key: 'email', label: 'Email' },
-                          { key: 'phone', label: 'Telefone' },
-                          { key: 'document', label: 'Documento' },
-                          { key: 'history', label: 'Histórico' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar CSV"
-                        aria-label="Exportar CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filterList(tenants), 'inquilinos', [
-                          { key: 'name', label: 'Inquilino' },
-                          { key: 'email', label: 'Email' },
-                          { key: 'phone', label: 'Telefone' },
-                          { key: 'document', label: 'Documento' },
-                          { key: 'history', label: 'Histórico' },
-                        ], 'Inquilinos')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar PDF"
-                        aria-label="Exportar PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left mobile-cards-table">
+                  <table className="w-full text-left">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Inquilino</th>
@@ -2610,34 +1729,21 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(tenants).length === 0 ? (
-                        <TableEmptyState
-                          colSpan={4}
-                          icon={<UserCheck size={32} />}
-                          title="Nenhum inquilino cadastrado"
-                          description="Adicione inquilinos para vincular a contratos e gerar cobranças automáticas."
-                          action={
-                            <button
-                              onClick={() => { setModalType('tenants'); setShowModal(true); }}
-                              className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                            >
-                              <Plus size={18} /> Adicionar Inquilino
-                            </button>
-                          }
-                        />
+                        <tr><td colSpan={4} className="px-8 py-16 text-center text-slate-400 italic">Nenhum inquilino encontrado.</td></tr>
                       ) : filterList(tenants).map(t => (
                         <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(t); setViewModalType('tenants'); setShowViewModal(true); }}>
-                          <td className="px-8 py-5" data-label="Inquilino">
+                          <td className="px-8 py-5">
                             <div className="font-black text-slate-700">{t.name}</div>
                             <div className="text-xs text-slate-400 font-bold">{t.document}</div>
                           </td>
-                          <td className="px-8 py-5" data-label="Contato">
+                          <td className="px-8 py-5">
                             <div className="flex flex-col">
                               <span className="text-sm text-slate-600 font-medium">{t.email}</span>
                               <span className="text-xs text-slate-400">{t.phone}</span>
                             </div>
                           </td>
-                          <td className="px-8 py-5" data-label="Status Asaas">
-                            <button
+                          <td className="px-8 py-5">
+                            <button 
                               onClick={(e) => { e.stopPropagation(); handleAsaasSync(t.id); }}
                               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${(t as any).asaas_id ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                             >
@@ -2645,9 +1751,9 @@ export default function App() {
                               {(t as any).asaas_id ? 'CONECTADO' : 'SINCRONIZAR'}
                             </button>
                           </td>
-                          <td className="px-8 py-5" data-label="Ações">
+                          <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button
+                              <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSearchTerm(t.name);
@@ -2656,12 +1762,12 @@ export default function App() {
                                   setShowFinancialFilters(true);
                                 }}
                                 className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
-                                aria-label="Ver histórico de cobranças"
+                                title="Ver histórico completo de cobranças deste inquilino"
                               >
                                 <List size={18} />
                               </button>
-                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(t); setModalType('tenants'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar inquilino"><Settings size={18} /></button>
-                              <button onClick={(e) => { e.stopPropagation(); handleDelete('tenants', t.id, t); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir inquilino"><Trash2 size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(t); setModalType('tenants'); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete('tenants', t.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -2673,66 +1779,7 @@ export default function App() {
 
               {activeTab === 'properties' && (
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                  {/* Export & Saved Filters */}
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.properties && (
-                        <button
-                          onClick={() => applySavedFilter('properties')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.properties.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.properties.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filterList(properties), 'imoveis', [
-                          { key: 'address', label: 'Endereço' },
-                          { key: 'address_complement', label: 'Complemento' },
-                          { key: 'identification', label: 'Identificação' },
-                          { key: 'type', label: 'Tipo' },
-                          { key: 'size', label: 'Tamanho (m²)' },
-                          { key: 'rooms', label: 'Quartos' },
-                          { key: 'bathrooms', label: 'Banheiros' },
-                          { key: 'usage_type', label: 'Uso' },
-                          { key: 'owner_name', label: 'Proprietário' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar CSV"
-                        aria-label="Exportar CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filterList(properties), 'imoveis', [
-                          { key: 'address', label: 'Endereço' },
-                          { key: 'address_complement', label: 'Complemento' },
-                          { key: 'identification', label: 'Identificação' },
-                          { key: 'type', label: 'Tipo' },
-                          { key: 'size', label: 'Tamanho (m²)' },
-                          { key: 'rooms', label: 'Quartos' },
-                          { key: 'bathrooms', label: 'Banheiros' },
-                          { key: 'usage_type', label: 'Uso' },
-                          { key: 'owner_name', label: 'Proprietário' },
-                        ], 'Imóveis')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar PDF"
-                        aria-label="Exportar PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <table className="w-full text-left mobile-cards-table">
+                  <table className="w-full text-left">
                     <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
                         <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Imóvel</th>
@@ -2744,23 +1791,10 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filterList(properties).length === 0 ? (
-                        <TableEmptyState
-                          colSpan={5}
-                          icon={<Home size={32} />}
-                          title="Nenhum imóvel cadastrado"
-                          description="Cadastre imóveis para começar a gerenciar contratos, vistorias e manutenções."
-                          action={
-                            <button
-                              onClick={() => { setModalType('properties'); setShowModal(true); }}
-                              className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                            >
-                              <Plus size={18} /> Cadastrar Imóvel
-                            </button>
-                          }
-                        />
+                        <tr><td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic">Nenhum imóvel encontrado.</td></tr>
                       ) : filterList(properties).map(p => (
                         <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(p); setViewModalType('properties'); setShowViewModal(true); }}>
-                          <td className="px-8 py-5" data-label="Imóvel">
+                          <td className="px-8 py-5">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="bg-slate-800 text-white px-2 py-0.5 rounded text-[10px] font-black tracking-widest">#{p.id}</span>
                               {p.identification && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border border-emerald-200">REF: {p.identification}</span>}
@@ -2772,14 +1806,14 @@ export default function App() {
                               <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full font-black uppercase tracking-tighter">{p.usage_type}</span>
                             </div>
                           </td>
-                          <td className="px-8 py-5" data-label="Características">
+                          <td className="px-8 py-5">
                             <div className="flex items-center gap-4 text-slate-400">
                               <div className="flex items-center gap-1"><span className="text-sm font-black text-slate-600">{p.rooms}</span> <span className="text-[10px] font-bold uppercase">Q</span></div>
                               <div className="flex items-center gap-1"><span className="text-sm font-black text-slate-600">{p.bathrooms}</span> <span className="text-[10px] font-bold uppercase">B</span></div>
                               <div className="flex items-center gap-1"><span className="text-sm font-black text-slate-600">{p.size}</span> <span className="text-[10px] font-bold uppercase">m²</span></div>
                             </div>
                           </td>
-                          <td className="px-8 py-5" data-label="Inquilino">
+                          <td className="px-8 py-5">
                             {(() => {
                               const activeContract = contracts.find(c => c.property_id === p.id && c.status !== 'finalizado' && c.status !== 'suspenso' && Math.ceil((new Date(c.end_date).getTime() - Date.now()) / 86400000) > 0);
                               return activeContract ? (
@@ -2792,13 +1826,13 @@ export default function App() {
                               );
                             })()}
                           </td>
-                          <td className="px-8 py-5" data-label="Proprietário">
+                          <td className="px-8 py-5">
                             <div className="text-sm font-bold text-slate-600">{p.owner_name}</div>
                           </td>
-                          <td className="px-8 py-5" data-label="Ações">
+                          <td className="px-8 py-5">
                             <div className="flex space-x-2">
-                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(p); setModalType('properties'); setSecondaryOwners(p.secondary_owners || []); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar imóvel"><Settings size={18} /></button>
-                              <button onClick={(e) => { e.stopPropagation(); handleDelete('properties', p.id, p); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir imóvel"><Trash2 size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingItem(p); setModalType('properties'); setSecondaryOwners(p.secondary_owners || []); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"><Settings size={18} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete('properties', p.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
                             </div>
                           </td>
                         </tr>
@@ -2845,62 +1879,8 @@ export default function App() {
                       ))}
                     </div>
 
-                    {/* Export & Saved Filters */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {savedFilters.contracts && (
-                          <button
-                            onClick={() => applySavedFilter('contracts')}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                            title={`Aplicar: ${savedFilters.contracts.name}`}
-                          >
-                            <BookmarkCheck size={14} />
-                            <span>{savedFilters.contracts.name}</span>
-                          </button>
-                        )}
-                        <button
-                          onClick={() => exportToCSV(filteredContracts, 'contratos', [
-                            { key: 'address', label: 'Imóvel' },
-                            { key: 'tenant_name', label: 'Inquilino' },
-                            { key: 'rent_value', label: 'Aluguel' },
-                            { key: 'start_date', label: 'Início' },
-                            { key: 'end_date', label: 'Fim' },
-                            { key: 'due_day', label: 'Dia Venc.' },
-                          ])}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                          title="Exportar CSV"
-                          aria-label="Exportar CSV"
-                        >
-                          <FileSpreadsheet size={18} className="text-emerald-600" />
-                        </button>
-                        <button
-                          onClick={() => exportToPDF(filteredContracts, 'contratos', [
-                            { key: 'address', label: 'Imóvel' },
-                            { key: 'tenant_name', label: 'Inquilino' },
-                            { key: 'rent_value', label: 'Aluguel' },
-                            { key: 'start_date', label: 'Início' },
-                            { key: 'end_date', label: 'Fim' },
-                            { key: 'due_day', label: 'Dia Venc.' },
-                          ], 'Contratos')}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                          title="Exportar PDF"
-                          aria-label="Exportar PDF"
-                        >
-                          <FileText size={18} className="text-rose-600" />
-                        </button>
-                        <button
-                          onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                          title="Salvar filtros atuais"
-                          aria-label="Salvar filtros"
-                        >
-                          <Bookmark size={18} className="text-blue-600" />
-                        </button>
-                      </div>
-                    </div>
-
                     <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in zoom-in-95 duration-300">
-                      <table className="w-full text-left mobile-cards-table">
+                      <table className="w-full text-left">
                         <thead className="bg-slate-50/50 border-b border-slate-100">
                           <tr>
                             <th className="px-8 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Contrato / Imóvel</th>
@@ -2912,39 +1892,26 @@ export default function App() {
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {filteredContracts.length === 0 ? (
-                            <TableEmptyState
-                              colSpan={5}
-                              icon={<FileText size={32} />}
-                              title="Nenhum contrato encontrado"
-                              description={contractStatusFilter === 'ativos' ? 'Não há contratos ativos no momento.' : contractStatusFilter === 'vencidos' ? 'Nenhum contrato vencido encontrado.' : 'Nenhum contrato finalizado encontrado.'}
-                              action={
-                                <button
-                                  onClick={() => { setModalType('contracts'); setShowModal(true); }}
-                                  className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                                >
-                                  <Plus size={18} /> Novo Contrato
-                                </button>
-                            }
-                            />
+                            <tr><td colSpan={5} className="px-8 py-16 text-center text-slate-400 italic">Nenhum contrato encontrado.</td></tr>
                           ) : filteredContracts.map(c => {
                             const extras = c.extra_charges ? JSON.parse(c.extra_charges) : [];
                             return (
                               <tr key={c.id} className="hover:bg-slate-50/50 transition-colors group cursor-pointer" onClick={() => { setViewingItem(c); setViewModalType('contracts'); setShowViewModal(true); }}>
-                                <td className="px-8 py-5" data-label="Contrato / Imóvel">
+                                <td className="px-8 py-5">
                                   <div className="font-black text-slate-700">{c.address}</div>
                                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">ID: {c.id}</div>
                                 </td>
-                                <td className="px-8 py-5" data-label="Inquilino">
+                                <td className="px-8 py-5">
                                   <div className="text-sm font-bold text-slate-600">{c.tenant_name}</div>
                                 </td>
-                                <td className="px-8 py-5" data-label="Financeiro">
+                                <td className="px-8 py-5">
                                   <div className="font-black text-emerald-600">R$ {c.rent_value.toLocaleString('pt-BR')}</div>
                                   <div className="flex gap-1 mt-1">
                                     <div className={`w-2 h-2 rounded-full ${c.iptu_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="IPTU" />
                                     <div className={`w-2 h-2 rounded-full ${c.condo_status === 'paid' ? 'bg-emerald-400' : 'bg-slate-200'}`} title="Condomínio" />
                                   </div>
                                 </td>
-                                <td className="px-8 py-5" data-label="Vigência">
+                                <td className="px-8 py-5">
                                   <div className="text-xs font-bold text-slate-500">{formatDate(c.start_date)} - {formatDate(c.end_date)}</div>
                                   {(() => {
                                     if (c.status === 'finalizado') {
@@ -2961,11 +1928,10 @@ export default function App() {
                                       : <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 mt-1"><CheckCircle2 size={9} /> ATIVO</span>;
                                   })()}
                                 </td>
-                                <td className="px-8 py-5" data-label="Ações">
+                                <td className="px-8 py-5">
                                   <div className="flex space-x-2">
-                                    <button onClick={(e) => { e.stopPropagation(); setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Editar contrato"><Settings size={18} /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDuplicateContract(c); }} className="p-2 text-amber-500 hover:bg-amber-50 rounded-xl transition-all" aria-label="Duplicar contrato" title="Duplicar Contrato"><Copy size={18} /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDelete('contracts', c.id, c); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" aria-label="Excluir contrato"><Trash2 size={18} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); setEditingItem(c); setModalType('contracts'); setExtraCharges(extras); setShowModal(true); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Editar Contrato"><Settings size={18} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete('contracts', c.id); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir Contrato"><Trash2 size={18} /></button>
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -2978,9 +1944,9 @@ export default function App() {
                                       <RefreshCw size={18} />
                                     </button>
                                     {!(c as any).asaas_subscription_id ? (
-                                      <button onClick={(e) => { e.stopPropagation(); handleAsaasSubscription(c.id); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" aria-label="Criar assinatura Asaas"><Zap size={18} /></button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleAsaasSubscription(c.id); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Criar Assinatura Asaas"><Zap size={18} /></button>
                                     ) : (
-                                      <button onClick={(e) => { e.stopPropagation(); handleCheckSubscription(c.id); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" aria-label="Verificar assinatura"><CheckCircle2 size={18} /></button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleCheckSubscription(c.id); }} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all" title="Verificar Assinatura"><CheckCircle2 size={18} /></button>
                                     )}
                                   </div>
                                 </td>
@@ -3001,13 +1967,13 @@ export default function App() {
                       <h2 className="text-3xl font-black text-slate-800 tracking-tight">Situação das cobranças</h2>
                       <p className="text-slate-500 font-medium">Gestão financeira em tempo real</p>
                     </div>
-                    <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-4">
                       <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
                         <button className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold flex items-center gap-2">
                           <Calendar size={16} />
                           Este mês
                         </button>
-                        <button
+                        <button 
                           onClick={() => setShowFinancialFilters(!showFinancialFilters)}
                           className={`px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${showFinancialFilters ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
                         >
@@ -3015,62 +1981,6 @@ export default function App() {
                           Filtros
                         </button>
                       </div>
-
-                      {/* Saved Filters Dropdown */}
-                      {savedFilters.financial && (
-                        <div className="relative">
-                          <button
-                            onClick={() => applySavedFilter('financial')}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                            title={`Aplicar: ${savedFilters.financial.name}`}
-                          >
-                            <BookmarkCheck size={14} />
-                            <span>{savedFilters.financial.name}</span>
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => exportToCSV(displayedPayments, 'cobrancas', [
-                            { key: 'tenant_name', label: 'Inquilino' },
-                            { key: 'address', label: 'Endereço' },
-                            { key: 'due_date', label: 'Vencimento' },
-                            { key: 'asaas_status', label: 'Status Asaas' },
-                            { key: 'amount_paid', label: 'Valor' },
-                            { key: 'status', label: 'Status' },
-                          ])}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                          title="Exportar CSV"
-                          aria-label="Exportar CSV"
-                        >
-                          <FileSpreadsheet size={18} className="text-emerald-600" />
-                        </button>
-                        <button
-                          onClick={() => exportToPDF(displayedPayments, 'cobrancas', [
-                            { key: 'tenant_name', label: 'Inquilino' },
-                            { key: 'address', label: 'Endereço' },
-                            { key: 'due_date', label: 'Vencimento' },
-                            { key: 'asaas_status', label: 'Status Asaas' },
-                            { key: 'amount_paid', label: 'Valor' },
-                            { key: 'status', label: 'Status' },
-                          ], 'Cobranças')}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                          title="Exportar PDF"
-                          aria-label="Exportar PDF"
-                        >
-                          <FileText size={18} className="text-rose-600" />
-                        </button>
-                        <button
-                          onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                          className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                          title="Salvar filtros atuais"
-                          aria-label="Salvar filtros"
-                        >
-                          <Bookmark size={18} className="text-blue-600" />
-                        </button>
-                      </div>
-
                       <button
                         onClick={handleGeneratePayments}
                         className="flex items-center space-x-2 bg-emerald-500 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 font-bold active:scale-95"
@@ -3216,7 +2126,7 @@ export default function App() {
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mês Vigente</span>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left mobile-cards-table">
+                      <table className="w-full text-left">
                         <thead className="bg-slate-50/50">
                           <tr>
                             <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Inquilino</th>
@@ -3229,37 +2139,20 @@ export default function App() {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {displayedPayments.length === 0 ? (
-                            <TableEmptyState
-                              colSpan={6}
-                              icon={<DollarSign size={32} />}
-                              title="Nenhuma fatura encontrada"
-                              description="Ajuste os filtros ou cadastre novos contratos para gerar cobranças."
-                              action={
-                                <div className="flex gap-2 justify-center">
-                                  <button
-                                    onClick={() => { setSearchTerm(''); setPaymentFilterStatus(null); setIgnoreDateFilter(false); }}
-                                    className="px-4 py-2 text-rose-500 font-bold text-sm hover:bg-rose-50 rounded-xl transition-colors"
-                                  >
-                                    Limpar Filtros
-                                  </button>
-                                  <button
-                                    onClick={() => { setModalType('contracts'); setShowModal(true); }}
-                                    className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-2"
-                                  >
-                                    <Plus size={18} /> Novo Contrato
-                                  </button>
-                                </div>
-                              }
-                            />
+                            <tr>
+                              <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">
+                                Nenhuma fatura encontrada com estes filtros.
+                              </td>
+                            </tr>
                           ) : (
                             displayedPayments.map(p => (
                               <tr key={p.id} className="hover:bg-slate-50/80 transition-colors group">
-                                <td className="px-6 py-4" data-label="Inquilino">
+                                <td className="px-6 py-4">
                                   <div className="font-bold text-slate-700">{p.tenant_name}</div>
                                   <div className="text-[10px] text-slate-400 font-medium truncate max-w-[200px]">{p.address}</div>
                                 </td>
-                                <td className="px-6 py-4" data-label="Vencimento">{formatDate(p.due_date)}</td>
-                                <td className="px-6 py-4" data-label="Status Asaas">
+                                <td className="px-6 py-4 text-slate-600 font-medium">{formatDate(p.due_date)}</td>
+                                <td className="px-6 py-4">
                                   {p.asaas_status ? (
                                     <span className="text-[10px] font-black px-2 py-1 bg-slate-100 text-slate-500 rounded-md">
                                       {p.asaas_status}
@@ -3268,20 +2161,19 @@ export default function App() {
                                     <span className="text-[10px] text-slate-300 italic">Não vinculado</span>
                                   )}
                                 </td>
-                                <td className="px-6 py-4" data-label="Valor">
+                                <td className="px-6 py-4">
                                   <div className="font-black text-slate-700">R$ {(p.amount_paid || contracts.find(c => c.id === p.contract_id)?.rent_value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                                 </td>
-                                <td className="px-6 py-4" data-label="Status">
+                                <td className="px-6 py-4">
                                   <StatusBadge status={p.status} />
                                 </td>
-                                <td className="px-6 py-4" data-label="Ações">
+                                <td className="px-6 py-4">
                                   <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     {(p.asaas_id || (contracts.find(c => c.id === p.contract_id) as any)?.asaas_subscription_id) && (
                                       <button
                                         onClick={() => handleAsaasCheck(p.id)}
                                         className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
                                         title="Conferir status no Asaas"
-                                        aria-label="Conferir status no Asaas"
                                       >
                                         <RefreshCw size={16} />
                                       </button>
@@ -3291,7 +2183,6 @@ export default function App() {
                                         onClick={() => handleAsaasPayment(p.id)}
                                         className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
                                         title="Gerar no Asaas"
-                                        aria-label="Gerar pagamento no Asaas"
                                       >
                                         <ExternalLink size={16} />
                                       </button>
@@ -3304,7 +2195,6 @@ export default function App() {
                                         setShowPaymentModal(true);
                                       }}
                                       className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                                      aria-label="Editar pagamento"
                                     >
                                       <Settings size={16} />
                                     </button>
@@ -3353,12 +2243,10 @@ export default function App() {
                       </h3>
                       <div className="space-y-4">
                         {payments.filter(p => p.status === 'paid' && p.transfer_status !== 'done').length === 0 ? (
-                          <EmptyState
-                            icon={<CheckCircle2 size={32} />}
-                            title="Nenhum repasse pendente"
-                            description="Todos os repasses estão em dia. Ótimo trabalho!"
-                            className="p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200"
-                          />
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            <CheckCircle2 size={32} className="mx-auto text-emerald-300 mb-2" />
+                            <p className="text-slate-400 font-bold">Nenhum repasse pendente!</p>
+                          </div>
                         ) : (
                           payments.filter(p => {
                             if (p.status !== 'paid' || p.transfer_status === 'done') return false;
@@ -3401,12 +2289,9 @@ export default function App() {
                             const prop = properties.find(pr => pr.id === contracts.find(c => c.id === p.contract_id)?.property_id);
                             return prop && String(prop.owner_id) === repasseOwnerFilter;
                           }).length === 0 ? (
-                          <EmptyState
-                            icon={<Database size={32} />}
-                            title="Nenhum histórico de repasses"
-                            description="Os repasses concluídos aparecerão aqui."
-                            className="p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200"
-                          />
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            <p className="text-slate-400 font-bold italic">Nenhum histórico encontrado.</p>
+                          </div>
                         ) : (
                           payments.filter(p => {
                             if (p.transfer_status !== 'done') return false;
@@ -3474,90 +2359,6 @@ export default function App() {
                       >
                         <Printer size={18} />
                         <span>Imprimir Tudo</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Export & Saved Filters */}
-                  <div className="bg-white p-4 rounded-3xl border border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 print:hidden">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {savedFilters.reports && (
-                        <button
-                          onClick={() => applySavedFilter('reports')}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                          title={`Aplicar: ${savedFilters.reports.name}`}
-                        >
-                          <BookmarkCheck size={14} />
-                          <span>{savedFilters.reports.name}</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => exportToCSV(filteredPayments, 'relatorio-financeiro', [
-                          { key: 'tenant_name', label: 'Inquilino' },
-                          { key: 'address', label: 'Endereço' },
-                          { key: 'due_date', label: 'Vencimento' },
-                          { key: 'amount_paid', label: 'Valor Pago' },
-                          { key: 'status', label: 'Status' },
-                          { key: 'transfer_status', label: 'Repasse' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar Financeiro CSV"
-                        aria-label="Exportar Financeiro CSV"
-                      >
-                        <FileSpreadsheet size={18} className="text-emerald-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToPDF(filteredPayments, 'relatorio-financeiro', [
-                          { key: 'tenant_name', label: 'Inquilino' },
-                          { key: 'address', label: 'Endereço' },
-                          { key: 'due_date', label: 'Vencimento' },
-                          { key: 'amount_paid', label: 'Valor Pago' },
-                          { key: 'status', label: 'Status' },
-                          { key: 'transfer_status', label: 'Repasse' },
-                        ], 'Relatório Financeiro')}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar Financeiro PDF"
-                        aria-label="Exportar Financeiro PDF"
-                      >
-                        <FileText size={18} className="text-rose-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToCSV(filteredContracts, 'relatorio-contratos', [
-                          { key: 'address', label: 'Imóvel' },
-                          { key: 'tenant_name', label: 'Inquilino' },
-                          { key: 'rent_value', label: 'Aluguel' },
-                          { key: 'start_date', label: 'Início' },
-                          { key: 'end_date', label: 'Fim' },
-                          { key: 'due_day', label: 'Dia Venc.' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar Contratos CSV"
-                        aria-label="Exportar Contratos CSV"
-                      >
-                        <FileCode size={18} className="text-blue-600" />
-                      </button>
-                      <button
-                        onClick={() => exportToCSV(filterList(properties), 'relatorio-imoveis', [
-                          { key: 'address', label: 'Endereço' },
-                          { key: 'address_complement', label: 'Complemento' },
-                          { key: 'identification', label: 'Identificação' },
-                          { key: 'type', label: 'Tipo' },
-                          { key: 'size', label: 'Tamanho (m²)' },
-                          { key: 'owner_name', label: 'Proprietário' },
-                        ])}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Exportar Imóveis CSV"
-                        aria-label="Exportar Imóveis CSV"
-                      >
-                        <Table2 size={18} className="text-purple-600" />
-                      </button>
-                      <button
-                        onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                        className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                        title="Salvar filtros atuais"
-                        aria-label="Salvar filtros"
-                      >
-                        <Bookmark size={18} className="text-blue-600" />
                       </button>
                     </div>
                   </div>
@@ -3725,12 +2526,9 @@ export default function App() {
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                               {filteredPayments.length === 0 ? (
-                                <TableEmptyState
-                                  colSpan={5}
-                                  icon={<DollarSign size={32} />}
-                                  title="Nenhum lançamento no período"
-                                  description="Selecione outro período ou cadastre novos contratos."
-                                />
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400 italic">Nenhum lançamento encontrado para este período.</td>
+                                </tr>
                               ) : (
                                 filteredPayments.map(p => (
                                   <tr key={p.id}>
@@ -3831,12 +2629,7 @@ export default function App() {
                                       </tr>
                                     ))}
                                     {ownerPayments.length === 0 && (
-                                      <TableEmptyState
-                                        colSpan={5}
-                                        icon={<DollarSign size={24} />}
-                                        title="Nenhum lançamento"
-                                        description="Nenhum pagamento encontrado para este proprietário no período."
-                                      />
+                                      <tr><td colSpan={5} className="px-6 py-4 text-center text-slate-400 italic">Nenhum lançamento no período.</td></tr>
                                     )}
                                   </tbody>
                                 </table>
@@ -3876,6 +2669,7 @@ export default function App() {
                             onClick={() => {
                               const enabled = localStorage.getItem('imobi_auto_backup') === 'true';
                               localStorage.setItem('imobi_auto_backup', (!enabled).toString());
+                              fetchData();
                             }}
                             className={`w-12 h-6 rounded-full transition-colors relative ${localStorage.getItem('imobi_auto_backup') === 'true' ? 'bg-emerald-500' : 'bg-slate-300'}`}
                           >
@@ -4302,7 +3096,23 @@ export default function App() {
         </div>
       )}
 
-      
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]">
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className={`px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-3 text-white font-bold backdrop-blur-md ${toast.type === 'success' ? 'bg-emerald-500/90' :
+              toast.type === 'error' ? 'bg-rose-500/90' : 'bg-slate-800/90'
+              }`}
+          >
+            {toast.type === 'success' && <ShieldCheck size={20} />}
+            {toast.type === 'error' && <AlertCircle size={20} />}
+            <span>{toast.message}</span>
+          </motion.div>
+        </div>
+      )}
+
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -4313,13 +3123,21 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold">{editingItem ? 'Editar' : 'Novo'} {modalType === 'owners' ? 'Proprietário' : modalType === 'tenants' ? 'Inquilino' : modalType === 'properties' ? 'Imóvel' : modalType === 'brokers' ? 'Corretor' : 'Contrato'}</h3>
-              <button onClick={() => { setShowModal(false); setEditingItem(null); setExtraCharges([]); setSecondaryOwners([]); setUploadedUrl(''); setFormSubmitting(false); }} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setShowModal(false); setEditingItem(null); setExtraCharges([]); setSecondaryOwners([]); setUploadedUrl(''); }} className="text-slate-400 hover:text-slate-600">
                 <Plus className="rotate-45" size={24} />
               </button>
             </div>
 
             <form
-              onSubmit={handleFormSubmit}
+              onSubmit={
+                modalType === 'owners' ? handleCreateOwner :
+                  modalType === 'tenants' ? handleCreateTenant :
+                    modalType === 'properties' ? handleCreateProperty :
+                      modalType === 'brokers' ? handleCreateBroker :
+                        modalType === 'inspections' ? handleCreateInspection :
+                          modalType === 'maintenances' ? handleCreateMaintenance :
+                            handleCreateContract
+              }
               className="space-y-4"
             >
               {modalType === 'owners' || modalType === 'tenants' || modalType === 'brokers' ? (
@@ -4489,32 +3307,26 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <Combobox
-                    name="property_id"
-                    value={editingItem?.property_id || ''}
-                    onChange={(v) => setEditingItem(prev => prev ? { ...prev, property_id: v } : null)}
-                    options={properties.map(p => ({
-                      value: p.id,
-                      label: `${p.address}${p.address_complement ? ` - ${p.address_complement}` : ''}${p.identification ? ` (${p.identification})` : ''}`,
-                      group: p.type || 'Outros'
-                    }))}
-                    placeholder="Selecione um imóvel..."
-                    required
-                    label="Imóvel"
-                  />
-                  <Combobox
-                    name="tenant_id"
-                    value={editingItem?.tenant_id || ''}
-                    onChange={(v) => setEditingItem(prev => prev ? { ...prev, tenant_id: v } : null)}
-                    options={tenants.map(t => ({
-                      value: t.id,
-                      label: t.name,
-                      group: 'Inquilinos'
-                    }))}
-                    placeholder="Selecione um inquilino..."
-                    required
-                    label="Inquilino"
-                  />
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Imóvel</label>
+                    <select name="property_id" defaultValue={editingItem?.property_id} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" required>
+                      <option value="">Selecione...</option>
+                      {properties.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.address}
+                          {p.address_complement && ` - ${p.address_complement}`}
+                          {p.identification && ` (${p.identification})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Inquilino</label>
+                    <select name="tenant_id" defaultValue={editingItem?.tenant_id} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" required>
+                      <option value="">Selecione...</option>
+                      {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Input label="Data Início" name="start_date" type="date" defaultValue={editingItem?.start_date} required />
                     <Input label="Data Fim" name="end_date" type="date" defaultValue={editingItem?.end_date} required />
@@ -4734,19 +3546,18 @@ export default function App() {
 
               {modalType === 'maintenances' && (
                 <>
-                  <Combobox
-                    name="property_id"
-                    value={editingItem?.property_id || ''}
-                    onChange={(v) => setEditingItem(prev => prev ? { ...prev, property_id: v } : null)}
-                    options={properties.map(p => ({
-                      value: p.id,
-                      label: `${p.address}${p.address_complement ? ` - ${p.address_complement}` : ''}${p.identification ? ` (${p.identification})` : ''}`,
-                      group: p.type || 'Outros'
-                    }))}
-                    placeholder="Selecione um imóvel..."
-                    required
-                    label="Imóvel"
-                  />
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Imóvel</label>
+                    <select name="property_id" defaultValue={editingItem?.property_id} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" required>
+                      {properties.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.address}
+                          {p.address_complement && ` - ${p.address_complement}`}
+                          {p.identification && ` (${p.identification})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-slate-700">Descrição do Problema</label>
                     <textarea name="description" defaultValue={editingItem?.description} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-24" required />
@@ -4781,13 +3592,9 @@ export default function App() {
                 </>
               )}
 
-              <LoadingButton
-                type="submit"
-                loading={formSubmitting}
-                className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 mt-4"
-              >
+              <button type="submit" className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 mt-4">
                 {editingItem ? 'Atualizar' : 'Salvar'} Registro
-              </LoadingButton>
+              </button>
             </form>
           </motion.div>
         </div>
@@ -4803,7 +3610,7 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold">Renovar Contrato</h3>
-              <button onClick={() => { setShowRenewModal(false); setRenewingContract(null); setFormSubmitting(false); }} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setShowRenewModal(false); setRenewingContract(null); }} className="text-slate-400 hover:text-slate-600">
                 <Plus className="rotate-45" size={24} />
               </button>
             </div>
@@ -4905,13 +3712,9 @@ export default function App() {
                 <Input label="Valor da Garantia" name="guarantee_value" type="number" step="0.01" defaultValue={renewingContract.guarantee_value || 0} />
               </div>
 
-              <LoadingButton
-                type="submit"
-                loading={formSubmitting}
-                className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 mt-4"
-              >
+              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 mt-4">
                 Confirmar Renovação
-              </LoadingButton>
+              </button>
             </form>
           </motion.div>
         </div>
@@ -4927,7 +3730,7 @@ export default function App() {
           >
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold">Processar Pagamento</h3>
-              <button onClick={() => { setShowPaymentModal(false); setSelectedPayment(null); setExtraPayments([]); setFormSubmitting(false); }} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setShowPaymentModal(false); setSelectedPayment(null); setExtraPayments([]); }} className="text-slate-400 hover:text-slate-600">
                 <Plus className="rotate-45" size={24} />
               </button>
             </div>
@@ -5102,13 +3905,9 @@ export default function App() {
                 </div>
               </div>
 
-              <LoadingButton
-                type="submit"
-                loading={formSubmitting}
-                className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 mt-4"
-              >
+              <button type="submit" className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 mt-4">
                 Confirmar Pagamento
-              </LoadingButton>
+              </button>
             </form>
           </motion.div>
         </div>
@@ -5131,67 +3930,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Export & Saved Filters */}
-            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                {savedFilters.repasse && (
-                  <button
-                    onClick={() => applySavedFilter('repasse')}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors"
-                    title={`Aplicar: ${savedFilters.repasse.name}`}
-                  >
-                    <BookmarkCheck size={14} />
-                    <span>{savedFilters.repasse.name}</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => exportToCSV(
-                    (Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid' && p.transfer_status === 'pending'),
-                    'repasses-pendentes',
-                    [
-                      { key: 'owner?.name', label: 'Proprietário', transform: (p) => owners.find(o => o.id === properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.owner_id)?.name || '-' },
-                      { key: 'address', label: 'Imóvel', transform: (p) => properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.address || '-' },
-                      { key: 'received_date', label: 'Data Receb.', transform: (p) => formatDate(p.received_date) },
-                      { key: 'transfer_amount', label: 'Valor Líquido', transform: (p) => `R$ ${p.transfer_amount?.toLocaleString('pt-BR')}` },
-                    ]
-                  )}
-                  className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                  title="Exportar CSV"
-                  aria-label="Exportar CSV"
-                >
-                  <FileSpreadsheet size={18} className="text-emerald-600" />
-                </button>
-                <button
-                  onClick={() => exportToPDF(
-                    (Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid' && p.transfer_status === 'pending'),
-                    'repasses-pendentes',
-                    [
-                      { key: 'owner?.name', label: 'Proprietário', transform: (p) => owners.find(o => o.id === properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.owner_id)?.name || '-' },
-                      { key: 'address', label: 'Imóvel', transform: (p) => properties.find(prop => prop.id === contracts.find(c => c.id === p.contract_id)?.property_id)?.address || '-' },
-                      { key: 'received_date', label: 'Data Receb.', transform: (p) => formatDate(p.received_date) },
-                      { key: 'transfer_amount', label: 'Valor Líquido', transform: (p) => `R$ ${p.transfer_amount?.toLocaleString('pt-BR')}` },
-                    ],
-                    'Repasses Pendentes'
-                  )}
-                  className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                  title="Exportar PDF"
-                  aria-label="Exportar PDF"
-                >
-                  <FileText size={18} className="text-rose-600" />
-                </button>
-                <button
-                  onClick={() => { setNewFilterName(''); setShowSavedFiltersModal(true); }}
-                  className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-                  title="Salvar filtros atuais"
-                  aria-label="Salvar filtros"
-                >
-                  <Bookmark size={18} className="text-blue-600" />
-                </button>
-              </div>
-            </div>
-
             <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
-              <table className="w-full text-left mobile-cards-table">
+              <table className="w-full text-left">
                 <thead className="bg-white border-b border-slate-200">
                   <tr>
                     <th className="px-6 py-4 text-sm font-semibold text-slate-500">Proprietário</th>
@@ -5208,14 +3948,14 @@ export default function App() {
 
                     return (
                       <tr key={p.id} className="hover:bg-white transition-colors">
-                        <td className="px-6 py-4" data-label="Proprietário">
+                        <td className="px-6 py-4">
                           <div className="font-medium">{owner?.name || '-'}</div>
                           <div className="text-[10px] text-slate-400">{owner?.bank_code ? `Banco: ${owner.bank_code} / Ag: ${owner.bank_agency} / Cc: ${owner.bank_account}` : 'Dados bancários ausentes'}</div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-500" data-label="Imóvel">{property?.address || '-'}</td>
-                        <td className="px-6 py-4 text-sm text-slate-500" data-label="Data Receb.">{formatDate(p.received_date)}</td>
-                        <td className="px-6 py-4 font-bold text-blue-600" data-label="Valor Líquido">R$ {p.transfer_amount?.toLocaleString('pt-BR')}</td>
-                        <td className="px-6 py-4" data-label="Ação">
+                        <td className="px-6 py-4 text-sm text-slate-500">{property?.address || '-'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{formatDate(p.received_date)}</td>
+                        <td className="px-6 py-4 font-bold text-blue-600">R$ {p.transfer_amount?.toLocaleString('pt-BR')}</td>
+                        <td className="px-6 py-4">
                           <button
                             onClick={() => { setSelectedPayment(p); setShowRepasseDetailModal(true); }}
                             className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-100 rounded-xl font-bold transition-all"
@@ -5228,12 +3968,11 @@ export default function App() {
                     );
                   })}
                   {(Array.isArray(payments) ? payments : []).filter(p => p.status === 'paid' && p.transfer_status === 'pending').length === 0 && (
-                    <TableEmptyState
-                      colSpan={5}
-                      icon={<ArrowRightLeft size={32} />}
-                      title="Nenhum repasse pendente"
-                      description="Todos os repasses foram processados."
-                    />
+                    <tr>
+                      <td colSpan={5} className="px-6 py-10 text-center text-slate-500">
+                        Nenhum repasse pendente no momento.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -5269,7 +4008,7 @@ export default function App() {
                   <h3 className="text-2xl font-black text-slate-800 mt-2">Detalhamento do Repasse</h3>
                   <p className="text-slate-500 text-sm">{property?.address || '-'}</p>
                 </div>
-                <button onClick={() => { setShowRepasseDetailModal(false); setFormSubmitting(false); }} className="text-slate-400 hover:text-slate-600">
+                <button onClick={() => setShowRepasseDetailModal(false)} className="text-slate-400 hover:text-slate-600">
                   <Plus className="rotate-45" size={24} />
                 </button>
               </div>
@@ -5390,79 +4129,8 @@ export default function App() {
           </motion.div>
         </div>
       )}
-
-      {/* Saved Filters Modal */}
-      {showSavedFiltersModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
-          >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold">Salvar Filtros Atuais</h3>
-              <button onClick={() => setShowSavedFiltersModal(false)} className="text-slate-400 hover:text-slate-600">
-                <Plus className="rotate-45" size={24} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-slate-500 text-sm">Dê um nome para este conjunto de filtros para reutilizá-lo depois.</p>
-
-              <input
-                type="text"
-                value={newFilterName}
-                onChange={(e) => setNewFilterName(e.target.value)}
-                placeholder="Ex: Meus filtros padrão, Vencidas este mês, etc."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
-                autoFocus
-              />
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowSavedFiltersModal(false)}
-                  className="flex-1 py-3 px-4 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={() => { saveCurrentFilters(activeTab); setShowSavedFiltersModal(false); }}
-                  disabled={!newFilterName.trim()}
-                  className="flex-1 py-3 px-4 bg-emerald-500 text-white rounded-xl font-semibold hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Salvar
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        isOpen={!!deleteConfirm}
-        onClose={() => setDeleteConfirm(null)}
-        onConfirm={confirmDelete}
-        title={deleteConfirm?.variant === 'warning' ? 'Confirmar Ação' : 'Excluir Registro'}
-        description={
-          deleteConfirm?.variant === 'warning'
-            ? 'Esta ação não pode ser desfeita. Tem certeza que deseja continuar?'
-            : 'Este registro será permanentemente excluído. Tem certeza que deseja continuar?'
-        }
-        itemDetails={deleteConfirm?.item ? [
-          { label: 'Tipo', value: deleteConfirm.type },
-          { label: 'ID', value: String(deleteConfirm.id) },
-          ...(deleteConfirm.item.name ? [{ label: 'Nome', value: deleteConfirm.item.name }] : []),
-          ...(deleteConfirm.item.address ? [{ label: 'Endereço', value: deleteConfirm.item.address }] : []),
-          ...(deleteConfirm.item.identification ? [{ label: 'Identificação', value: deleteConfirm.item.identification }] : []),
-          ...(deleteConfirm.item.email ? [{ label: 'Email', value: deleteConfirm.item.email }] : []),
-        ] : []}
-        loading={deleteConfirm?.loading}
-        variant={deleteConfirm?.variant || 'danger'}
-      />
     </div>
-  </ToastProvider>
-);
+  );
 }
 
 function ImportSection({ title, onUpload, fields }: { title: string, onUpload: (file: File) => void, fields: string }) {
